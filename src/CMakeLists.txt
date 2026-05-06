@@ -234,6 +234,10 @@ endif()
 
 # Set compiler-specific flags for the C++ library
 if(MSVC)
+    # Statically link the CRT so the DLL has no dependency on a specific
+    # version installed on a target machine.
+    set_property(TARGET c2pa_cpp PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded")
+
     target_compile_options(c2pa_cpp PRIVATE
         /WX
         /sdl
