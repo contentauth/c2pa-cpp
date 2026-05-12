@@ -5980,7 +5980,7 @@ TEST_F(BuilderTest, CreateIntentViaContext)
     auto context = c2pa::Context(R"({
         "version": 1,
         "builder": {
-            "intent": {"Create": "digitalCapture"}
+            "intent": {"create": "digitalCapture"}
         }
     })");
     auto builder = c2pa::Builder(context, R"({})");

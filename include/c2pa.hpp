@@ -923,6 +923,18 @@ namespace c2pa
         /// @throws C2paException for errors encountered by the C2PA library.
         std::string json() const;
 
+        /// @brief Get the manifest as a detailed JSON string.
+        /// @details The detailed view more closely resembles the underlying JUMBF
+        ///          manifest store. Unlike json(), it exposes the full
+        ///          `assertion_store` map for each manifest, including assertions
+        ///          that the regular view filters out (such as `c2pa.thumbnail.*`,
+        ///          `c2pa.actions.*`, and `c2pa.hash.*`). Use this when building
+        ///          redaction URIs or otherwise needing the canonical assertion
+        ///          labels embedded in the manifest.
+        /// @return The detailed manifest as a JSON string.
+        /// @throws C2paException for errors encountered by the C2PA library.
+        std::string detailed_json() const;
+
         /// @brief Get a resource from the reader and write it to a file.
         /// @param uri The URI of the resource.
         /// @param path The file path to write the resource to.
