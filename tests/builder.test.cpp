@@ -3388,6 +3388,192 @@ TEST_F(BuilderTest, ArchiveToFilePath) {
 }
 
 TEST_F(BuilderTest, ExtractIngredientsFromArchive) {
+  auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+
+  // Archive each ingredient individually using the new archive API.
+  // Each single-ingredient builder is archived to a stream, then added to the new builder.
+  auto archive_ingredient = [&](const std::string& ingredient_json,
+                                const fs::path& asset_path) -> std::stringstream {
+      auto b = c2pa::Builder(manifest);
+      b.add_ingredient(ingredient_json, asset_path);
+      std::stringstream ss(std::ios::in | std::ios::out | std::ios::binary);
+      b.to_archive(ss);
+      return ss;
+  };
+
+  auto archive1 = archive_ingredient(
+      R"({"title": "A.jpg", "relationship": "parentOf"})",
+      c2pa_test::get_fixture_path("A.jpg"));
+  auto archive2 = archive_ingredient(
+      R"({"title": "C.jpg", "relationship": "componentOf"})",
+      c2pa_test::get_fixture_path("C.jpg"));
+  auto archive3 = archive_ingredient(
+      R"({"title": "sample.gif", "relationship": "componentOf"})",
+      c2pa_test::get_fixture_path("sample1.gif"));
+
+  // Add each archived ingredient to the new builder using the archive API.
+  auto merged_builder = c2pa::Builder(manifest);
+  archive1.seekg(0);
+  EXPECT_NO_THROW(merged_builder.add_ingredient(
+      R"({"title": "A.jpg", "relationship": "parentOf"})",
+      "application/c2pa", archive1));
+  archive2.seekg(0);
+  EXPECT_NO_THROW(merged_builder.add_ingredient(
+      R"({"title": "C.jpg", "relationship": "componentOf"})",
+      "application/c2pa", archive2));
+  archive3.seekg(0);
+  EXPECT_NO_THROW(merged_builder.add_ingredient(
+      R"({"title": "sample.gif", "relationship": "componentOf"})",
+      "application/c2pa", archive3));
+
+  // Sign and verify
+  auto signer = c2pa_test::create_test_signer();
+  auto source_path = c2pa_test::get_fixture_path("A.jpg");
+  auto output_path = get_temp_path("merged_output.jpg");
+
+  std::vector<unsigned char> manifest_data;
+  EXPECT_NO_THROW({
+      manifest_data = merged_builder.sign(source_path, output_path, signer);
+  });
+  ASSERT_FALSE(manifest_data.empty());
+
+  // Read and log the merged builder's manifest JSON
+  auto merged_reader = c2pa::Reader(output_path);
+  // Verify all 3 ingredients are present in the merged builder
+  auto merged_parsed = json::parse(merged_reader.json());
+  std::string merged_active = merged_parsed["active_manifest"];
+  auto merged_ingredients = merged_parsed["manifests"][merged_active]["ingredients"];
+  EXPECT_EQ(merged_ingredients.size(), 3) << "Merged builder should have all 3 ingredients";
+}
+
+TEST_F(BuilderTest, ExtractIngredientsFromArchiveToBuilder) {
+  auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+
+  // Helper: archive a single ingredient and return the stream.
+  auto make_ingredient_archive = [&](const std::string& ingredient_json,
+                                     const fs::path& asset_path) -> std::stringstream {
+      auto b = c2pa::Builder(manifest);
+      b.add_ingredient(ingredient_json, asset_path);
+      std::stringstream ss(std::ios::in | std::ios::out | std::ios::binary);
+      b.to_archive(ss);
+      return ss;
+  };
+
+  // Archive 1 contains A.jpg and C.jpg (as separate per-ingredient archives)
+  auto archive_a = make_ingredient_archive(
+      R"({"title": "A.jpg", "relationship": "parentOf"})",
+      c2pa_test::get_fixture_path("A.jpg"));
+  auto archive_c = make_ingredient_archive(
+      R"({"title": "C.jpg", "relationship": "componentOf"})",
+      c2pa_test::get_fixture_path("C.jpg"));
+
+  // Archive 2 contains sample.gif
+  auto archive_gif = make_ingredient_archive(
+      R"({"title": "sample.gif", "relationship": "componentOf"})",
+      c2pa_test::get_fixture_path("sample1.gif"));
+
+  // Build merged builder by adding each archived ingredient via the archive API.
+  // Call add_ingredient twice for "archive 1" group, once for "archive 2" group.
+  auto merged_builder = c2pa::Builder(manifest);
+
+  archive_a.seekg(0);
+  EXPECT_NO_THROW(merged_builder.add_ingredient(
+      R"({"title": "A.jpg", "relationship": "parentOf"})",
+      "application/c2pa", archive_a));
+
+  archive_c.seekg(0);
+  EXPECT_NO_THROW(merged_builder.add_ingredient(
+      R"({"title": "C.jpg", "relationship": "componentOf"})",
+      "application/c2pa", archive_c));
+
+  archive_gif.seekg(0);
+  EXPECT_NO_THROW(merged_builder.add_ingredient(
+      R"({"title": "sample.gif", "relationship": "componentOf"})",
+      "application/c2pa", archive_gif));
+
+  // Sign and verify
+  auto signer = c2pa_test::create_test_signer();
+  auto source_path = c2pa_test::get_fixture_path("A.jpg");
+  auto output_path = get_temp_path("merged_output2.jpg");
+
+  std::vector<unsigned char> manifest_data;
+  EXPECT_NO_THROW({
+      manifest_data = merged_builder.sign(source_path, output_path, signer);
+  });
+  ASSERT_FALSE(manifest_data.empty());
+
+  auto merged_reader = c2pa::Reader(output_path);
+  auto merged_parsed = json::parse(merged_reader.json());
+  std::string merged_active = merged_parsed["active_manifest"];
+  auto merged_ingredients = merged_parsed["manifests"][merged_active]["ingredients"];
+  EXPECT_EQ(merged_ingredients.size(), 3) << "Merged builder should have all 3 ingredients from both archives";
+}
+
+TEST_F(BuilderTest, ExtractIngredientsFromArchives) {
+  auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+
+  // Helper: wrap a single asset in a per-ingredient archive using the new API.
+  auto make_ingredient_archive = [&](const std::string& ingredient_json,
+                                     const fs::path& asset_path) -> std::stringstream {
+      auto b = c2pa::Builder(manifest);
+      b.add_ingredient(ingredient_json, asset_path);
+      std::stringstream ss(std::ios::in | std::ios::out | std::ios::binary);
+      b.to_archive(ss);
+      return ss;
+  };
+
+  // "Archive group 1": A.jpg and C.jpg — each gets its own per-ingredient archive
+  auto archive_a = make_ingredient_archive(
+      R"({"title": "A.jpg", "relationship": "parentOf"})",
+      c2pa_test::get_fixture_path("A.jpg"));
+  auto archive_c = make_ingredient_archive(
+      R"({"title": "C.jpg", "relationship": "componentOf"})",
+      c2pa_test::get_fixture_path("C.jpg"));
+
+  // "Archive group 2": sample1.gif — per-ingredient archive
+  auto archive_gif = make_ingredient_archive(
+      R"({"title": "sample.gif", "relationship": "componentOf"})",
+      c2pa_test::get_fixture_path("sample1.gif"));
+
+  // Merge all three ingredients into one builder via the new archive API
+  auto merged_builder = c2pa::Builder(manifest);
+
+  archive_a.seekg(0);
+  EXPECT_NO_THROW(merged_builder.add_ingredient(
+      R"({"title": "A.jpg", "relationship": "parentOf"})", "application/c2pa", archive_a));
+
+  archive_c.seekg(0);
+  EXPECT_NO_THROW(merged_builder.add_ingredient(
+      R"({"title": "C.jpg", "relationship": "componentOf"})", "application/c2pa", archive_c));
+
+  archive_gif.seekg(0);
+  EXPECT_NO_THROW(merged_builder.add_ingredient(
+      R"({"title": "sample.gif", "relationship": "componentOf"})", "application/c2pa", archive_gif));
+
+  // Sign the merged builder
+  auto signer = c2pa_test::create_test_signer();
+  auto source_path = c2pa_test::get_fixture_path("A.jpg");
+  auto output_path = get_temp_path("merged_from_archives.jpg");
+
+  std::vector<unsigned char> manifest_data;
+  EXPECT_NO_THROW({
+      manifest_data = merged_builder.sign(source_path, output_path, signer);
+  });
+  ASSERT_FALSE(manifest_data.empty());
+
+  // Read and verify the merged output
+  auto merged_reader = c2pa::Reader(output_path);
+  auto merged_json = merged_reader.json();
+
+  // Verify all 3 ingredients are present from both archive groups
+  auto merged_parsed = json::parse(merged_json);
+  std::string merged_active = merged_parsed["active_manifest"];
+  auto merged_ingredients = merged_parsed["manifests"][merged_active]["ingredients"];
+  EXPECT_EQ(merged_ingredients.size(), 3) << "Merged builder should have all 3 ingredients from both archives";
+}
+
+
+TEST_F(BuilderTest, ExtractIngredientsFromArchiveLegacy) {
   // Helper function to transfer ingredients from an archive to a new builder
   auto create_builder_with_ingredients_from_archive = [](
       std::istream& archive_stream,
@@ -3469,7 +3655,7 @@ TEST_F(BuilderTest, ExtractIngredientsFromArchive) {
   // Sign the merged builder
   auto signer = c2pa_test::create_test_signer();
   auto source_path = c2pa_test::get_fixture_path("A.jpg");
-  auto output_path = get_temp_path("merged_output.jpg");
+  auto output_path = get_temp_path("merged_output_legacy.jpg");
 
   std::vector<unsigned char> manifest_data;
   EXPECT_NO_THROW({
@@ -3491,7 +3677,7 @@ TEST_F(BuilderTest, ExtractIngredientsFromArchive) {
   c2pa::load_settings(R"({"verify": {"verify_after_reading": true}})", "json");
 }
 
-TEST_F(BuilderTest, ExtractIngredientsFromArchiveToBuilder) {
+TEST_F(BuilderTest, ExtractIngredientsFromArchiveToBuilderLegacy) {
   auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
 
   // Helper function that adds ingredients from an archived builder into an existing builder.
@@ -3619,13 +3805,10 @@ TEST_F(BuilderTest, ExtractIngredientsFromArchiveToBuilder) {
 
   // Archive 1: A.jpg and C.jpg
   auto builder1 = c2pa::Builder(manifest);
-
-  std::string ingredient1_json = R"({"title": "A.jpg", "relationship": "parentOf"})";
-  builder1.add_ingredient(ingredient1_json, c2pa_test::get_fixture_path("A.jpg"));
-
-  std::string ingredient2_json = R"({"title": "C.jpg", "relationship": "componentOf"})";
-  builder1.add_ingredient(ingredient2_json, c2pa_test::get_fixture_path("C.jpg"));
-
+  builder1.add_ingredient(R"({"title": "A.jpg", "relationship": "parentOf"})",
+                          c2pa_test::get_fixture_path("A.jpg"));
+  builder1.add_ingredient(R"({"title": "C.jpg", "relationship": "componentOf"})",
+                          c2pa_test::get_fixture_path("C.jpg"));
   std::stringstream archive1_stream(std::ios::in | std::ios::out | std::ios::binary);
   EXPECT_NO_THROW({
       builder1.to_archive(archive1_stream);
@@ -3633,10 +3816,8 @@ TEST_F(BuilderTest, ExtractIngredientsFromArchiveToBuilder) {
 
   // Archive 2: sample1.gif
   auto builder2 = c2pa::Builder(manifest);
-
-  std::string ingredient3_json = R"({"title": "sample.gif", "relationship": "componentOf"})";
-  builder2.add_ingredient(ingredient3_json, c2pa_test::get_fixture_path("sample1.gif"));
-
+  builder2.add_ingredient(R"({"title": "sample.gif", "relationship": "componentOf"})",
+      c2pa_test::get_fixture_path("sample1.gif"));
   std::stringstream archive2_stream(std::ios::in | std::ios::out | std::ios::binary);
   EXPECT_NO_THROW({
       builder2.to_archive(archive2_stream);
@@ -3658,7 +3839,7 @@ TEST_F(BuilderTest, ExtractIngredientsFromArchiveToBuilder) {
   // Sign the merged builder
   auto signer = c2pa_test::create_test_signer();
   auto source_path = c2pa_test::get_fixture_path("A.jpg");
-  auto output_path = get_temp_path("merged_output2.jpg");
+  auto output_path = get_temp_path("merged_output2_legacy.jpg");
 
   std::vector<unsigned char> manifest_data;
   EXPECT_NO_THROW({
@@ -3680,8 +3861,7 @@ TEST_F(BuilderTest, ExtractIngredientsFromArchiveToBuilder) {
   c2pa::load_settings(R"({"verify": {"verify_after_reading": true}})", "json");
 }
 
-TEST_F(BuilderTest, ExtractIngredientsFromArchives) {
-  // Helper that creates a builder from multiple archives, merging all their ingredients.
+TEST_F(BuilderTest, ExtractIngredientsFromArchivesLegacy) {
   auto create_builder_with_ingredients_from_archives = [](
       std::vector<std::reference_wrapper<std::istream>>& archive_streams,
       const std::string& base_manifest_json) -> c2pa::Builder {
@@ -3801,24 +3981,14 @@ TEST_F(BuilderTest, ExtractIngredientsFromArchives) {
 
   // Archive 1: A.jpg and C.jpg
   auto builder1 = c2pa::Builder(manifest);
-
-  std::string ingredient1_json = R"({"title": "A.jpg", "relationship": "parentOf"})";
-  builder1.add_ingredient(ingredient1_json, c2pa_test::get_fixture_path("A.jpg"));
-
-  std::string ingredient2_json = R"({"title": "C.jpg", "relationship": "componentOf"})";
-  builder1.add_ingredient(ingredient2_json, c2pa_test::get_fixture_path("C.jpg"));
-
+  builder1.add_ingredient(R"({"title": "A.jpg", "relationship": "parentOf"})", c2pa_test::get_fixture_path("A.jpg"));
+  builder1.add_ingredient(R"({"title": "C.jpg", "relationship": "componentOf"})", c2pa_test::get_fixture_path("C.jpg"));
   std::stringstream archive1_stream(std::ios::in | std::ios::out | std::ios::binary);
-  EXPECT_NO_THROW({
-      builder1.to_archive(archive1_stream);
-  });
+  EXPECT_NO_THROW({ builder1.to_archive(archive1_stream); });
 
   // Archive 2: sample1.gif
   auto builder2 = c2pa::Builder(manifest);
-
-  std::string ingredient3_json = R"({"title": "sample.gif", "relationship": "componentOf"})";
-  builder2.add_ingredient(ingredient3_json, c2pa_test::get_fixture_path("sample1.gif"));
-
+  builder2.add_ingredient(R"({"title": "sample.gif", "relationship": "componentOf"})", c2pa_test::get_fixture_path("sample1.gif"));
   std::stringstream archive2_stream(std::ios::in | std::ios::out | std::ios::binary);
   EXPECT_NO_THROW({
       builder2.to_archive(archive2_stream);
@@ -3836,7 +4006,7 @@ TEST_F(BuilderTest, ExtractIngredientsFromArchives) {
   // Sign the merged builder
   auto signer = c2pa_test::create_test_signer();
   auto source_path = c2pa_test::get_fixture_path("A.jpg");
-  auto output_path = get_temp_path("merged_from_archives.jpg");
+  auto output_path = get_temp_path("merged_from_archives_legacy.jpg");
 
   std::vector<unsigned char> manifest_data;
   EXPECT_NO_THROW({
@@ -4743,6 +4913,156 @@ TEST_F(BuilderTest, LinkArchiveLabelOnSigningBuilderOpened)
 
     bool linked = verify_ingredient_linked(builder, output_path, signer, "c2pa.opened");
     EXPECT_TRUE(linked);
+}
+
+TEST_F(BuilderTest, LinkArchiveLabelOnSigningBuilderOpenedFromStream)
+{
+    // Test scenario:
+    // 1. Create the .c2pa ingredient archive.
+    // 2. Build a signing manifest whose action references a chosen label.
+    // 3. Open the archive as std::ifstream and add it via the stream
+    // overload, setting the same label on the ingredient JSON.
+    // 4. Sign, then read back and verify the action linked to the ingredient.
+    auto context = c2pa::Context();
+    auto signer = c2pa_test::create_test_signer();
+    auto source_path = c2pa_test::get_fixture_path("A.jpg");
+    auto fixture_path = c2pa_test::get_fixture_path("A.jpg");
+
+    auto archive_path = get_temp_path("link_label_opened_stream_full_flow.c2pa");
+    {
+        auto archive_manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+        auto archive_builder = c2pa::Builder(context, archive_manifest);
+        archive_builder.add_ingredient(
+            R"({"title": "photo.jpg", "relationship": "parentOf"})",
+            fixture_path);
+        archive_builder.to_archive(archive_path);
+    }
+
+    json signing_manifest = {
+        {"claim_generator_info", json::array({{{"name", "c2pa-test"}, {"version", "1.0"}}})},
+        {"assertions", json::array({
+            {
+                {"label", "c2pa.actions.v2"},
+                {"data", {{"actions", json::array({
+                    {
+                        {"action", "c2pa.opened"},
+                        {"digitalSourceType", "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCreation"},
+                        {"parameters", {{"ingredientIds", json::array({"my-ingredient"})}}}
+                    }
+                })}}}
+            }
+        })}
+    };
+    auto builder = c2pa::Builder(context, signing_manifest.dump());
+
+    std::ifstream archive_stream(archive_path, std::ios::binary);
+    builder.add_ingredient(
+        R"({"title": "photo.jpg", "relationship": "parentOf", "label": "my-ingredient"})",
+        "application/c2pa",
+        archive_stream);
+    archive_stream.close();
+
+    auto output_path = get_temp_path("link_label_opened_stream_full_flow_result.jpg");
+    ASSERT_NO_THROW(builder.sign(source_path, output_path, signer));
+
+    auto reader = c2pa::Reader(context, output_path);
+    auto parsed = json::parse(reader.json());
+    std::string active = parsed["active_manifest"];
+    auto& manifest = parsed["manifests"][active];
+
+    bool found_action = false;
+    std::string resolved_url;
+    for (auto& assertion : manifest["assertions"]) {
+        if (assertion["label"] != "c2pa.actions.v2") continue;
+        for (auto& action : assertion["data"]["actions"]) {
+            if (action["action"] != "c2pa.opened") continue;
+            found_action = true;
+            ASSERT_TRUE(action.contains("parameters"));
+            ASSERT_TRUE(action["parameters"].contains("ingredients"));
+            auto& ingredients = action["parameters"]["ingredients"];
+            ASSERT_TRUE(ingredients.is_array());
+            ASSERT_EQ(ingredients.size(), 1u);
+            resolved_url = ingredients[0]["url"];
+        }
+    }
+    ASSERT_TRUE(found_action) << "c2pa.opened action not found in signed manifest";
+    EXPECT_EQ(resolved_url, "self#jumbf=c2pa.assertions/c2pa.ingredient.v3")
+        << "Action did not resolve to the linked ingredient";
+}
+
+TEST_F(BuilderTest, LinkArchiveLabelOnSigningBuilderPlacedFromStream)
+{
+    auto archive_path = get_temp_path("label_on_signing_placed_stream.c2pa");
+    create_ingredient_archive(archive_path,
+        R"({"title": "photo.jpg", "relationship": "componentOf"})");
+
+    auto manifest_json = make_manifest_with_action("c2pa.placed", "my-ingredient");
+    auto context = c2pa::Context();
+    auto builder = c2pa::Builder(context, manifest_json.dump());
+
+    std::ifstream archive_stream(archive_path, std::ios::binary);
+    builder.add_ingredient(
+        R"({"title": "photo.jpg", "relationship": "componentOf", "label": "my-ingredient"})",
+        "application/c2pa",
+        archive_stream);
+    archive_stream.close();
+
+    auto signer = c2pa_test::create_test_signer();
+    auto output_path = get_temp_path("link_label_on_signing_placed_stream.jpg");
+
+    bool linked = verify_ingredient_linked(builder, output_path, signer, "c2pa.placed");
+    EXPECT_TRUE(linked);
+}
+
+TEST_F(BuilderTest, LinkArchiveInstanceIdOnSigningBuilderFromStreamFails)
+{
+    auto context = c2pa::Context();
+    auto signer = c2pa_test::create_test_signer();
+    auto source_path = c2pa_test::get_fixture_path("A.jpg");
+
+    auto archive_path = get_temp_path("iid_from_archive_linking_stream.c2pa");
+    create_ingredient_archive(archive_path,
+        R"({"title": "photo.jpg", "relationship": "parentOf", "instance_id": "xmp:iid:test-archive-link-stream"})");
+
+    auto reader = c2pa::Reader(context, archive_path);
+    auto archive_parsed = json::parse(reader.json());
+    std::string active = archive_parsed["active_manifest"];
+    auto& archive_ingredient = archive_parsed["manifests"][active]["ingredients"][0];
+    ASSERT_TRUE(archive_ingredient.contains("instance_id"));
+    std::string instance_id = archive_ingredient["instance_id"];
+
+    json manifest_json = {
+        {"claim_generator_info", json::array({{{"name", "c2pa-test"}, {"version", "1.0"}}})},
+        {"assertions", json::array({
+            {
+                {"label", "c2pa.actions.v2"},
+                {"data", {{"actions", json::array({
+                    {
+                        {"action", "c2pa.opened"},
+                        {"digitalSourceType", "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCreation"},
+                        {"parameters", {{"ingredientIds", json::array({instance_id})}}}
+                    }
+                })}}}
+            }
+        })}
+    };
+
+    auto builder = c2pa::Builder(context, manifest_json.dump());
+
+    std::ifstream archive_stream(archive_path, std::ios::binary);
+    builder.add_ingredient(
+        json({
+            {"title", archive_ingredient["title"]},
+            {"relationship", "parentOf"},
+            {"instance_id", instance_id}
+        }).dump(),
+        "application/c2pa",
+        archive_stream);
+    archive_stream.close();
+
+    auto output_path = get_temp_path("iid_from_archive_linking_stream_result.jpg");
+
+    EXPECT_THROW(builder.sign(source_path, output_path, signer), c2pa::C2paException);
 }
 
 TEST_F(BuilderTest, LinkArchiveTwoIngredientsUsingLabels)
@@ -5829,7 +6149,7 @@ TEST_F(BuilderTest, CreateIntentViaContext)
     auto context = c2pa::Context(R"({
         "version": 1,
         "builder": {
-            "intent": {"Create": "digitalCapture"}
+            "intent": {"create": "digitalCapture"}
         }
     })");
     auto builder = c2pa::Builder(context, R"({})");
