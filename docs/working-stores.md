@@ -450,17 +450,27 @@ An **ingredient archive** (in c2pa-archive-format) is a `.c2pa` file that alread
 
 For the dedicated ingredient archive APIs, see [Single-ingredient archive APIs](#single-ingredient-archive-apis).
 
-This difference governs how each can be linked to an action via `ingredientIds`. The table below describes the **legacy** load path for ingredient archives, where the archive is passed directly to `add_ingredient` with format `"application/c2pa"`:
+This difference governs how each can be linked to an action via `ingredientIds`. The table below covers all three cases: plain ingredients, ingredient archives loaded via the dedicated APIs (recommended), and ingredient archives loaded via the legacy `add_ingredient` path:
 
-| Aspect | Ingredient | Ingredient archive (legacy load via `add_ingredient(json, "application/c2pa", archive)`) |
+| Aspect | Ingredient | Ingredient archive (dedicated APIs: `write_ingredient_archive` + `add_ingredient_from_archive`) | Ingredient archive (legacy load via `add_ingredient(json, "application/c2pa", archive)`) |
+| --- | --- | --- | --- |
+| Source format passed to `add_ingredient` | Asset MIME type (`image/jpeg`, `video/mp4`, ...) or asset path | N/A — loaded via `add_ingredient_from_archive(stream)` | `application/c2pa` or path to a `.c2pa` ingredient archive file |
+| What it is | "Live" asset | A serialized single-ingredient archive (opaque provenance) | A serialized manifest store (opaque provenance) |
+| Linking via `label` | Primary linking key, set on the signing builder's `add_ingredient` JSON parameter | Pass `label` value as archive key to `write_ingredient_archive`; flows through as `ingredientIds` value | Only linking key that works, set on the signing builder's `add_ingredient` JSON |
+| Linking via `instance_id` | Alternative to using `label` | Pass `instance_id` value as archive key to `write_ingredient_archive`; flows through as `ingredientIds` value | Does not link, signing-time error |
+| Linking via a `label` baked in at archive-creation time | N/A (not an archive) | N/A — archive key is set explicitly at `write_ingredient_archive` call time | Does not carry through, must be re-asserted on the signing builder's `add_ingredient` JSON parameter |
+
+#### When to use `label` vs `instance_id`
+
+| Property | `label` | `instance_id` |
 | --- | --- | --- |
-| Source format passed to `add_ingredient` | Asset MIME type (`image/jpeg`, `video/mp4`, ...) or asset path | `application/c2pa` or path to a `.c2pa` ingredient archive file |
-| What it is | "Live" asset | A serialized manifest store (opaque provenance) |
-| Linking via `label` | Primary linking key, set on the signing builder's `add_ingredient` JSON parameter | Only linking key that works, set on the signing builder's `add_ingredient` JSON |
-| Linking via `instance_id` | Alternative to using `label` | Does not link, signing-time error |
-| Linking via a `label` baked in at archive-creation time | N/A (not an archive) | Does not carry through, must be re-asserted on the signing builder, set on the signing builder's `add_ingredient` JSON parameter |
+| Who controls it | Caller (any string) | Caller (any string, or from XMP metadata) |
+| Priority for linking | Primary: checked first | Fallback: used when `label` is absent/empty |
+| When to use | JSON-defined manifests where the caller controls the ingredient definition | Programmatic workflows where a stable identifier persisting unchanged across rebuilds is needed |
+| Survives signing | SDK may reassign the actual assertion label in the signed manifest | Unchanged |
+| Stable across rebuilds | The caller controls the build-time value; the post-signing label may change | Yes, always the same set value |
 
-For the dedicated `write_ingredient_archive` + `add_ingredient_from_archive` ingredient archive APIs, linking rules differ: the archive key (either `label` or `instance_id`) flows through and becomes the `ingredientIds` value. See [Lookup keys and action linking](#lookup-keys-and-action-linking).
+Use `label` when defining manifests in JSON. Use `instance_id` when a stable identifier that persists unchanged across rebuilds is needed. The `label` used at build time may be reassigned by the SDK during signing and will not appear unchanged in `Reader::json()` output.
 
 ### Adding ingredients to a working store
 
@@ -497,7 +507,60 @@ builder.sign("new_asset.jpg", "signed_asset.jpg", signer);
 
 ### Linking an ingredient archive to an action
 
-This section covers the **legacy** load path: producer calls `to_archive`, signing builder calls `add_ingredient(json, "application/c2pa", archive)`. For the dedicated `write_ingredient_archive` + `add_ingredient_from_archive` ingredient archive APIs, see [Lookup keys and action linking](#lookup-keys-and-action-linking).
+Two paths exist for loading an ingredient archive and linking it to an action. The dedicated ingredient archive APIs (`write_ingredient_archive` + `add_ingredient_from_archive`) are recommended. The legacy path (`add_ingredient(json, "application/c2pa", archive)`) is deprecated.
+
+#### Using the dedicated ingredient archive APIs
+
+The archive key passed to `write_ingredient_archive` (either a `label` or `instance_id` value) flows through automatically and becomes the `ingredientIds` value on the signing builder. No re-assertion is needed.
+
+Producer — register the ingredient and write the archive, keyed by `instance_id`:
+
+```cpp
+auto settings = c2pa::Settings();
+settings.set("builder.generate_c2pa_archive", "true");
+auto context = c2pa::Context::ContextBuilder()
+    .with_settings(std::move(settings))
+    .create_context();
+
+auto producer = c2pa::Builder(context, manifest_str);
+producer.add_ingredient(
+    R"({"title": "photo.jpg", "relationship": "componentOf",
+        "instance_id": "my-ingredient"})",
+    "photo.jpg");
+
+std::stringstream archive(std::ios::in | std::ios::out | std::ios::binary);
+producer.write_ingredient_archive("my-ingredient", archive);
+```
+
+Signing builder — use the same archive key string in `ingredientIds`, then load the archive:
+
+```cpp
+auto signing_manifest = R"({
+    "claim_generator_info": [{"name": "an-application", "version": "0.1.0"}],
+    "assertions": [{
+        "label": "c2pa.actions.v2",
+        "data": {
+            "actions": [{
+                "action": "c2pa.placed",
+                "parameters": {
+                    "ingredientIds": ["my-ingredient"]
+                }
+            }]
+        }
+    }]
+})";
+
+auto consumer = c2pa::Builder(context, signing_manifest);
+archive.seekg(0);
+consumer.add_ingredient_from_archive(archive);
+consumer.sign("source.jpg", "signed.jpg", signer);
+```
+
+For the full table of linking outcomes when `label`, `instance_id`, or both are set, see [Lookup keys and action linking](#lookup-keys-and-action-linking).
+
+When linking multiple ingredient archives, write one archive per ingredient with a distinct key and load each with `add_ingredient_from_archive`. List all keys in the appropriate `ingredientIds` arrays.
+
+#### Using the legacy load path (deprecated)
 
 > [!IMPORTANT]
 > **For the legacy load path, linking an ingredient archive is `label`-driven only.**
@@ -508,13 +571,12 @@ This section covers the **legacy** load path: producer calls `to_archive`, signi
 >
 > Attempting to link via `instance_id`, or relying on a baked-in label alone, produces a sign-time error: `Action ingredientId not found: <id>`. See [Troubleshooting linking errors](#troubleshooting-linking-errors).
 
-To link an ingredient archive to an action via `ingredientIds`, set a `label` on the JSON passed to `add_ingredient` on the signing builder, and use the same string in the action's `ingredientIds` array. A label, as linking key, links ingredients and actions using it together: the label identifies the link. Labels are build-time linking keys only. The SDK may reassign the actual label in the signed manifest during signing.
-
+To link an ingredient archive to an action via `ingredientIds`, set a `label` on the JSON passed to `add_ingredient` on the signing builder, and use the same string in the action's `ingredientIds` array. Labels are build-time linking keys only. The SDK may reassign the actual label in the signed manifest during signing.
 
 ```cpp
 c2pa::Context context;
 
-// Step 1: Create the ingredient archive.
+// Step 1: Create the ingredient archive (legacy).
 auto manifest_str = read_file("training.json");
 auto archive_builder = c2pa::Builder(context, manifest_str);
 archive_builder.add_ingredient(
@@ -562,7 +624,7 @@ archive_stream.close();
 builder.sign("source.jpg", "signed.jpg", signer);
 ```
 
-When linking multiple ingredient archives, give each a distinct label and reference it in the appropriate action's `ingredientIds` array.
+When linking multiple ingredient archives with the legacy path, give each a distinct label and reference it in the appropriate action's `ingredientIds` array.
 
 If each ingredient has its own action (e.g., one `c2pa.opened` for the parent and one `c2pa.placed` for a composited element), set up two actions with separate `ingredientIds`:
 
@@ -667,8 +729,21 @@ Using archives provides these advantages:
 
 The default binary format of an archive is the **C2PA JUMBF binary format** (`application/c2pa`), which is the standard way to save and restore working stores.
 
-> [!NOTE]
-> `to_archive`, `from_archive`, and `with_archive` are for saving and restoring a full working store (manifest definition + all resources). For ingredient archive workflows — producing one archive per ingredient and selectively loading ingredients — use the [single-ingredient archive APIs](#single-ingredient-archive-apis) instead.
+### Which archive API to use
+
+Two archive API families share the same binary format but serve different purposes:
+
+| | Full-builder APIs | Single-ingredient APIs |
+| --- | --- | --- |
+| APIs | `to_archive`, `from_archive`, `with_archive` | `write_ingredient_archive`, `add_ingredient_from_archive` |
+| What is archived | Entire builder: manifest definition + all ingredients + all resources | One ingredient only (other builder state is omitted) |
+| Typical use | Checkpoint or transfer a manifest-in-progress between sessions or machines | Ingredient catalog; selectively load individual ingredients at sign time |
+| Requires setting | None | `builder.generate_c2pa_archive = true` on the producing builder |
+| Linking key | N/A (full builder is restored as-is) | Archive key (`label` or `instance_id`) flows through automatically as `ingredientIds` value |
+
+Use `to_archive` / `from_archive` to pause and resume a signing workflow, or to hand off a complete manifest-in-progress to another process or machine. Use `write_ingredient_archive` / `add_ingredient_from_archive` to distribute or cache individual ingredients independently, or to assemble a manifest from a catalog of pre-archived ingredients at sign time.
+
+The subsections below cover the full-builder APIs. For single-ingredient archive workflows, see [Single-ingredient archive APIs](#single-ingredient-archive-apis).
 
 ### Saving a working store to archive
 
