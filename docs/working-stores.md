@@ -448,6 +448,11 @@ A **(plain) ingredient** is a source asset that the builder reads at `add_ingred
 
 An **ingredient archive** (in c2pa-archive-format) is a `.c2pa` file that already contains a fully-formed ingredient. It can be produced with `write_ingredient_archive` (dedicated ingredient archive APIs) or with `to_archive()` on a builder holding one ingredient (legacy). When passed to `add_ingredient`, the builder treats the archive's contents as opaque provenance: the archive's internal fields are not exposed as live JSON the signing builder can introspect (or use for linking to actions). Only the JSON the caller supplies in the current `add_ingredient` call is visible to the builder in that round.
 
+Once an ingredient is archived, the original ingredient asset is no longer needed: the `.c2pa` ingredient archive stands in for it and carries the ingredient's provenance.
+
+> [!NOTE]
+> The relationship is one-directional. For legacy support you can _read_ an ingredient out of a builder archive, but you should not try to restore a `Builder` from an ingredient archive — consume it as an ingredient with `add_ingredient_from_archive` (or the legacy `add_ingredient(json, "application/c2pa", archive)` path) instead.
+
 For the dedicated ingredient archive APIs, see [Single-ingredient archive APIs](#single-ingredient-archive-apis).
 
 This difference governs how each can be linked to an action via `ingredientIds`. The table below describes the **legacy** load path for ingredient archives, where the archive is passed directly to `add_ingredient` with format `"application/c2pa"`:
@@ -794,10 +799,7 @@ The `Builder` class exposes two dedicated APIs for moving a single ingredient be
 
 `write_ingredient_archive(id, stream)` is a lookup step rather than a factory. It finds an ingredient that was already registered under `id` and serializes that one ingredient as a JUMBF archive (tagged `ARCHIVE_TYPE_INGREDIENT`). Calling it without a prior `add_ingredient` for that id throws `c2pa::C2paException`.
 
-Two more contract points to keep in mind:
-
-- The producing builder must have the `builder.generate_c2pa_archive` setting enabled. Otherwise `write_ingredient_archive` throws.
-- The exported archive is not a lossless slice of the parent. It contains one cloned ingredient and a fresh claim instance id. Any other ingredients on the parent builder are omitted.
+The exported archive is not a lossless slice of the parent. It contains one cloned ingredient and a fresh claim instance id. Any other ingredients on the parent builder are omitted.
 
 `add_ingredient_from_archive(stream)` adds the ingredient back to a consuming builder, keyed by the same id the producer used.
 
@@ -805,7 +807,6 @@ Two more contract points to keep in mind:
 
 ```cpp
 auto settings = c2pa::Settings();
-settings.set("builder.generate_c2pa_archive", "true");
 auto context = c2pa::Context::ContextBuilder()
     .with_settings(std::move(settings))
     .create_context();
@@ -834,7 +835,6 @@ The archive contains exactly one ingredient. Reading it back through `c2pa::Read
 
 ```cpp
 auto settings = c2pa::Settings();
-settings.set("builder.generate_c2pa_archive", "true");
 auto context = c2pa::Context::ContextBuilder()
     .with_settings(std::move(settings))
     .create_context();
@@ -895,7 +895,6 @@ With the dedicated ingredient archive APIs, the producer writes a single-ingredi
 ```cpp
 // Current API: one archive per ingredient via write_ingredient_archive
 auto settings = c2pa::Settings();
-settings.set("builder.generate_c2pa_archive", "true");
 auto context = c2pa::Context::ContextBuilder()
     .with_settings(std::move(settings))
     .create_context();
@@ -998,6 +997,8 @@ consumer.sign(source_path, output_path, signer);
 #### Linking with `label` only
 
 When only `label` is set, pass the `label` value to `write_ingredient_archive`. Use that same string in `ingredientIds`.
+
+This works even though `label` is not preserved as an ingredient field. The label string is not written into `instance_id`, and it does not appear in the signed manifest. `add_ingredient_from_archive` carries the archive key in the archive's metadata and restores it as a builder-only linking key, so the action resolves to the ingredient at signing time. See [Lookup keys and action linking](#lookup-keys-and-action-linking) for the full mechanism.
 
 Producer:
 

@@ -6351,7 +6351,8 @@ TEST_F(BuilderTest, ArchiveIngredientWithProvenanceRoundTripAndReuse)
 TEST_F(BuilderTest, ExtractIngredientsFromArchiveAndReuseUsingArchiveApi)
 {
     auto settings = c2pa::Settings();
-    settings.set("builder.generate_c2pa_archive", "true");
+    // builder.generate_c2pa_archive has become default
+// settings.set("builder.generate_c2pa_archive", "true");
     auto context = c2pa::Context::ContextBuilder()
         .with_settings(std::move(settings))
         .create_context();
@@ -6394,7 +6395,8 @@ TEST_F(BuilderTest, ExtractIngredientsFromArchiveAndReuseUsingArchiveApi)
 TEST_F(BuilderTest, LinkIngredientArchiveParentOfOpenedUsingArchiveApi)
 {
     auto settings = c2pa::Settings();
-    settings.set("builder.generate_c2pa_archive", "true");
+    // builder.generate_c2pa_archive has become default
+// settings.set("builder.generate_c2pa_archive", "true");
     auto context = c2pa::Context::ContextBuilder()
         .with_settings(std::move(settings))
         .create_context();
@@ -6424,7 +6426,8 @@ TEST_F(BuilderTest, LinkIngredientArchiveParentOfOpenedUsingArchiveApi)
 TEST_F(BuilderTest, LinkIngredientArchiveComponentOfPlacedUsingArchiveApi)
 {
     auto settings = c2pa::Settings();
-    settings.set("builder.generate_c2pa_archive", "true");
+    // builder.generate_c2pa_archive has become default
+// settings.set("builder.generate_c2pa_archive", "true");
     auto context = c2pa::Context::ContextBuilder()
         .with_settings(std::move(settings))
         .create_context();
@@ -6453,7 +6456,8 @@ TEST_F(BuilderTest, LinkIngredientArchiveComponentOfPlacedUsingArchiveApi)
 TEST_F(BuilderTest, LinkIngredientArchiveToBothOpenedAndPlacedUsingArchiveApi)
 {
     auto settings = c2pa::Settings();
-    settings.set("builder.generate_c2pa_archive", "true");
+    // builder.generate_c2pa_archive has become default
+// settings.set("builder.generate_c2pa_archive", "true");
     auto context = c2pa::Context::ContextBuilder()
         .with_settings(std::move(settings))
         .create_context();
@@ -6532,7 +6536,8 @@ TEST_F(BuilderTest, LinkIngredientArchiveToBothOpenedAndPlacedUsingArchiveApi)
 TEST_F(BuilderTest, IngredientCatalogUsingArchiveApi)
 {
     auto settings = c2pa::Settings();
-    settings.set("builder.generate_c2pa_archive", "true");
+    // builder.generate_c2pa_archive has become default
+// settings.set("builder.generate_c2pa_archive", "true");
     auto context = c2pa::Context::ContextBuilder()
         .with_settings(std::move(settings))
         .create_context();
@@ -6577,7 +6582,8 @@ TEST_F(BuilderTest, IngredientCatalogUsingArchiveApi)
 TEST_F(BuilderTest, LinkThreeIngredientArchivesDistinctIdsUsingArchiveApi)
 {
     auto settings = c2pa::Settings();
-    settings.set("builder.generate_c2pa_archive", "true");
+    // builder.generate_c2pa_archive has become default
+// settings.set("builder.generate_c2pa_archive", "true");
     auto context = c2pa::Context::ContextBuilder()
         .with_settings(std::move(settings))
         .create_context();
@@ -6660,7 +6666,8 @@ TEST_F(BuilderTest, LinkThreeIngredientArchivesDistinctIdsUsingArchiveApi)
 TEST_F(BuilderTest, MixIngredientApisLinkByLabel)
 {
     auto settings = c2pa::Settings();
-    settings.set("builder.generate_c2pa_archive", "true");
+    // builder.generate_c2pa_archive has become default
+// settings.set("builder.generate_c2pa_archive", "true");
     auto context = c2pa::Context::ContextBuilder()
         .with_settings(std::move(settings))
         .create_context();
@@ -6729,7 +6736,8 @@ TEST_F(BuilderTest, MixIngredientApisLinkByLabel)
 TEST_F(BuilderTest, IngredientArchiveFallsBackToInstanceIdWhenNoLabel)
 {
     auto settings = c2pa::Settings();
-    settings.set("builder.generate_c2pa_archive", "true");
+    // builder.generate_c2pa_archive has become default
+// settings.set("builder.generate_c2pa_archive", "true");
     auto context = c2pa::Context::ContextBuilder()
         .with_settings(std::move(settings))
         .create_context();
@@ -6774,7 +6782,8 @@ TEST_F(BuilderTest, IngredientArchiveFallsBackToInstanceIdWhenNoLabel)
 TEST_F(BuilderTest, WriteIngredientArchiveWithoutAddIngredientThrows)
 {
     auto settings = c2pa::Settings();
-    settings.set("builder.generate_c2pa_archive", "true");
+    // builder.generate_c2pa_archive has become default
+// settings.set("builder.generate_c2pa_archive", "true");
     auto context = c2pa::Context::ContextBuilder()
         .with_settings(std::move(settings))
         .create_context();
@@ -6790,7 +6799,8 @@ TEST_F(BuilderTest, WriteIngredientArchiveWithoutAddIngredientThrows)
 TEST_F(BuilderTest, WriteIngredientArchiveWithUnknownIdThrows)
 {
     auto settings = c2pa::Settings();
-    settings.set("builder.generate_c2pa_archive", "true");
+    // builder.generate_c2pa_archive has become default
+// settings.set("builder.generate_c2pa_archive", "true");
     auto context = c2pa::Context::ContextBuilder()
         .with_settings(std::move(settings))
         .create_context();
@@ -6810,7 +6820,8 @@ TEST_F(BuilderTest, WriteIngredientArchiveWithUnknownIdThrows)
 TEST_F(BuilderTest, WriteIngredientArchiveContainsOnlyTargetIngredient)
 {
     auto settings = c2pa::Settings();
-    settings.set("builder.generate_c2pa_archive", "true");
+    // builder.generate_c2pa_archive has become default
+// settings.set("builder.generate_c2pa_archive", "true");
     auto context = c2pa::Context::ContextBuilder()
         .with_settings(std::move(settings))
         .create_context();
@@ -6844,7 +6855,8 @@ TEST_F(BuilderTest, WriteIngredientArchiveContainsOnlyTargetIngredient)
 TEST_F(BuilderTest, InstanceIdSurvivesWriteIngredientArchiveRoundTripAndSigning)
 {
     auto settings = c2pa::Settings();
-    settings.set("builder.generate_c2pa_archive", "true");
+    // builder.generate_c2pa_archive has become default
+// settings.set("builder.generate_c2pa_archive", "true");
     auto context = c2pa::Context::ContextBuilder()
         .with_settings(std::move(settings))
         .create_context();
@@ -6884,7 +6896,8 @@ TEST_F(BuilderTest, InstanceIdSurvivesWriteIngredientArchiveRoundTripAndSigning)
 TEST_F(BuilderTest, InstanceIdAutoGeneratedWhenNotProvided)
 {
     auto settings = c2pa::Settings();
-    settings.set("builder.generate_c2pa_archive", "true");
+    // builder.generate_c2pa_archive has become default
+// settings.set("builder.generate_c2pa_archive", "true");
     auto context = c2pa::Context::ContextBuilder()
         .with_settings(std::move(settings))
         .create_context();
@@ -6916,6 +6929,35 @@ TEST_F(BuilderTest, InstanceIdAutoGeneratedWhenNotProvided)
     std::string iid = ingredients[0]["instance_id"];
     EXPECT_EQ(iid.substr(0, 8), "xmp.iid:")
         << "Auto-generated instance_id should start with xmp.iid:, got: " << iid;
+}
+
+// When add_ingredient JSON omits "relationship", the SDK applies "componentOf" as the default.
+TEST_F(BuilderTest, RelationshipDefaultsToComponentOf)
+{
+    auto context = c2pa::Context::ContextBuilder().create_context();
+
+    auto manifest_str = R"({
+        "claim_generator_info": [{"name": "test", "version": "1.0"}]
+    })";
+
+    // Add ingredient with NO relationship in JSON.
+    auto builder = c2pa::Builder(context, manifest_str);
+    builder.add_ingredient(
+        R"({"title": "A.jpg"})",
+        c2pa_test::get_fixture_path("A.jpg"));
+
+    auto signer = c2pa_test::create_test_signer();
+    auto output_path = get_temp_path("relationship_defaults_component_of.jpg");
+    ASSERT_NO_THROW(builder.sign(c2pa_test::get_fixture_path("A.jpg"), output_path, signer));
+
+    auto reader = c2pa::Reader(context, output_path);
+    auto parsed = json::parse(reader.json());
+    std::string active = parsed["active_manifest"];
+    auto& ingredients = parsed["manifests"][active]["ingredients"];
+    ASSERT_EQ(ingredients.size(), 1u);
+    ASSERT_TRUE(ingredients[0].contains("relationship"));
+    EXPECT_EQ(ingredients[0]["relationship"], "componentOf")
+        << "Omitting relationship should default to componentOf";
 }
 
 // instance_id set on add_ingredient survives to_archive and is
@@ -6959,7 +7001,8 @@ TEST_F(BuilderTest, InstanceIdSurvivesToArchiveAndReader)
 TEST_F(BuilderTest, IngredientIdPassedToWriteArchiveRestoredPrefersLabelInSigningBuilder)
 {
     auto settings = c2pa::Settings();
-    settings.set("builder.generate_c2pa_archive", "true");
+    // builder.generate_c2pa_archive has become default
+// settings.set("builder.generate_c2pa_archive", "true");
     auto context = c2pa::Context::ContextBuilder()
         .with_settings(std::move(settings))
         .create_context();
@@ -7015,7 +7058,8 @@ TEST_F(BuilderTest, IngredientIdPassedToWriteArchiveRestoredPrefersLabelInSignin
 TEST_F(BuilderTest, IngredientIdPassedToWriteArchiveRestoredAsLabelUsingLabelOnly)
 {
     auto settings = c2pa::Settings();
-    settings.set("builder.generate_c2pa_archive", "true");
+    // builder.generate_c2pa_archive has become default
+// settings.set("builder.generate_c2pa_archive", "true");
     auto context = c2pa::Context::ContextBuilder()
         .with_settings(std::move(settings))
         .create_context();
@@ -7061,7 +7105,8 @@ TEST_F(BuilderTest, IngredientIdPassedToWriteArchiveRestoredAsLabelUsingLabelOnl
 TEST_F(BuilderTest, IngredientIdPassedToWriteArchiveRestoredAsLabelUsingInstanceIdOnly)
 {
     auto settings = c2pa::Settings();
-    settings.set("builder.generate_c2pa_archive", "true");
+    // builder.generate_c2pa_archive has become default
+// settings.set("builder.generate_c2pa_archive", "true");
     auto context = c2pa::Context::ContextBuilder()
         .with_settings(std::move(settings))
         .create_context();
@@ -7112,7 +7157,8 @@ TEST_F(BuilderTest, IngredientIdPassedToWriteArchiveRestoredAsLabelUsingInstance
 TEST_F(BuilderTest, IngredientIdPassedToWriteArchiveRestoredAsLabelBothSetUseLabelForLinking)
 {
     auto settings = c2pa::Settings();
-    settings.set("builder.generate_c2pa_archive", "true");
+    // builder.generate_c2pa_archive has become default
+// settings.set("builder.generate_c2pa_archive", "true");
     auto context = c2pa::Context::ContextBuilder()
         .with_settings(std::move(settings))
         .create_context();
@@ -7162,7 +7208,8 @@ TEST_F(BuilderTest, IngredientIdPassedToWriteArchiveRestoredAsLabelBothSetUseLab
 TEST_F(BuilderTest, IngredientIdPassedToWriteArchiveRestoredAsLabelBothSetUseInstanceIdForLinking)
 {
     auto settings = c2pa::Settings();
-    settings.set("builder.generate_c2pa_archive", "true");
+    // builder.generate_c2pa_archive has become default
+// settings.set("builder.generate_c2pa_archive", "true");
     auto context = c2pa::Context::ContextBuilder()
         .with_settings(std::move(settings))
         .create_context();

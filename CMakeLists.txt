@@ -65,6 +65,13 @@ if(ENABLE_SANITIZERS)
         # Note: LeakSanitizer is not supported on macOS (both x86_64 and ARM64)
         # On Linux, LeakSanitizer is integrated with AddressSanitizer
         if(APPLE)
+            # Apple clang (Xcode 16) ships a compiler-rt whose AddressSanitizer
+            # runtime may abort at startup on macOS 26+ Use a newer toolchain
+            # (e.g. Homebrew LLVM) for sanitizer builds; see `make test-san`.
+            if(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+                message(WARNING
+                    "Sanitizers requested with AppleClang. Its ASan runtime may aborts at startup on macOS 26+.")
+            endif()
             add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer -g)
             add_link_options(-fsanitize=address,undefined)
             message(STATUS "Sanitizers enabled on macOS: ASAN and UBSAN (LSan not supported on macOS)")
