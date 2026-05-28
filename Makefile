@@ -15,10 +15,11 @@ ifdef C2PA_RS_PATH
 endif
 
 # Sanitizer builds need a compiler-rt that matches the running OS. On macOS 26+
-# the Apple clang (Xcode 16) AddressSanitizer runtime aborts at process startup
-# with "sanitizer_malloc_mac.inc:189 CHECK failed: ((!asan_init_is_running))"
+# the Apple clang (Xcode 16) AddressSanitizer runtime may abort at process startup
+# with "sanitizer_malloc_mac.inc CHECK failed: ((!asan_init_is_running))"
 # before main() runs, so the sanitizer build must use a newer toolchain.
-# Default to a Homebrew LLVM clang on macOS; override with SAN_CC / SAN_CXX.
+# Default to a Homebrew LLVM clang on macOS, as it may be new enough
+# (consider updating if still failing). Override with SAN_CC / SAN_CXX.
 SAN_CMAKE_OPTS :=
 ifeq ($(OS),Darwin)
 LLVM_PREFIX := $(shell brew --prefix llvm 2>/dev/null)
@@ -59,9 +60,8 @@ test-release: clean release
 # Test with sanitizers (ASAN + UBSAN)
 test-san: clean
 	@if [ "$(OS)" = "Darwin" ] && [ -z "$(SAN_CC)" ]; then \
-		echo "ERROR: no Homebrew LLVM found. Apple clang's ASan runtime aborts at startup on macOS 26+."; \
-		echo "       Install one with 'brew install llvm', or set SAN_CC / SAN_CXX to a clang whose"; \
-		echo "       compiler-rt supports this OS."; \
+		echo "ERROR: no Homebrew LLVM found. Apple clang's ASan runtime may abort at startup on macOS 26+."; \
+		echo "       Install a recent one with 'brew install llvm', or set SAN_CC/SAN_CXX to a clang whose compiler-rt supports this OS."; \
 		exit 1; \
 	fi
 	cmake -S . -B $(DEBUG_BUILD_DIR) -G "Ninja" -DCMAKE_BUILD_TYPE=Debug -DENABLE_SANITIZERS=ON $(CMAKE_OPTS) $(SAN_CMAKE_OPTS)
