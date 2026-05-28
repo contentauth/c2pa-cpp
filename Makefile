@@ -15,16 +15,17 @@ ifdef C2PA_RS_PATH
 endif
 
 # Sanitizer builds need a compiler-rt that matches the running OS. On macOS 26+
-# the Apple clang (Xcode 16) AddressSanitizer runtime may abort at process startup
+# the Apple clang (Xcode 16) AddressSanitizer runtime can abort at process startup
 # with "sanitizer_malloc_mac.inc CHECK failed: ((!asan_init_is_running))"
-# before main() runs, so the sanitizer build must use a newer toolchain.
-# Default to a Homebrew LLVM clang on macOS, as it may be new enough
-# (consider updating if still failing). Override with SAN_CC / SAN_CXX.
+# before main() runs. If a Homebrew LLVM clang is actually installed, use it for
+# sanitizer builds; otherwise fall back to the default toolchain (fine on older
+# macOS and on Linux). Override with SAN_CC / SAN_CXX.
+# Note: `brew --prefix llvm` prints a path even when llvm is NOT installed, so the
+# binary's existence must be verified (-x) before using it.
 SAN_CMAKE_OPTS :=
 ifeq ($(OS),Darwin)
-LLVM_PREFIX := $(shell brew --prefix llvm 2>/dev/null)
-SAN_CC ?= $(if $(LLVM_PREFIX),$(LLVM_PREFIX)/bin/clang,)
-SAN_CXX ?= $(if $(LLVM_PREFIX),$(LLVM_PREFIX)/bin/clang++,)
+SAN_CC ?= $(shell c="$$(brew --prefix llvm 2>/dev/null)/bin/clang"; [ -x "$$c" ] && echo "$$c")
+SAN_CXX ?= $(shell c="$$(brew --prefix llvm 2>/dev/null)/bin/clang++"; [ -x "$$c" ] && echo "$$c")
 ifneq ($(SAN_CC),)
 SAN_CMAKE_OPTS += -DCMAKE_C_COMPILER=$(SAN_CC) -DCMAKE_CXX_COMPILER=$(SAN_CXX)
 endif
@@ -59,10 +60,12 @@ test-release: clean release
 
 # Test with sanitizers (ASAN + UBSAN)
 test-san: clean
-	@if [ "$(OS)" = "Darwin" ] && [ -z "$(SAN_CC)" ]; then \
-		echo "ERROR: no Homebrew LLVM found. Apple clang's ASan runtime may abort at startup on macOS 26+."; \
-		echo "       Install a recent one with 'brew install llvm', or set SAN_CC/SAN_CXX to a clang whose compiler-rt supports this OS."; \
-		exit 1; \
+	@if [ -n "$(SAN_CC)" ]; then \
+		echo "Sanitizer build using $(SAN_CC)"; \
+	elif [ "$(OS)" = "Darwin" ]; then \
+		echo "NOTE: using the default toolchain for sanitizers. If tests abort at startup with"; \
+		echo "      'asan_init_is_running' (Apple clang on macOS 26+), run 'brew install llvm'"; \
+		echo "      or set SAN_CC/SAN_CXX to a clang whose compiler-rt supports this OS."; \
 	fi
 	cmake -S . -B $(DEBUG_BUILD_DIR) -G "Ninja" -DCMAKE_BUILD_TYPE=Debug -DENABLE_SANITIZERS=ON $(CMAKE_OPTS) $(SAN_CMAKE_OPTS)
 	cmake --build $(DEBUG_BUILD_DIR)
