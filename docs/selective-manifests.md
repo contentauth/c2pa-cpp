@@ -430,11 +430,11 @@ Use `label` when defining manifests in JSON. Use `instance_id` when working prog
 
 A `Builder` represents a **working store**: a manifest that is being assembled but has not yet been signed. Archives serialize this working store (definition + resources) to a `.c2pa` binary format, allowing to save, transfer, or resume the work later. For more background on working stores and archives, see [Working stores](https://opensource.contentauthenticity.org/docs/rust-sdk/docs/working-stores).
 
-There are two distinct types of archives, sharing the same binary format but being conceptually different: builder archives (working store archives) and ingredient archives.
+There are two distinct types of archives, sharing the same binary format but being conceptually different: builder archives and ingredient archives.
 
 ### Builder archives vs. ingredient archives
 
-A **builder archive** (also called a working store archive) is a serialized snapshot of a `Builder`. It contains the manifest definition, all resources, and any ingredients that were added. It is created by `builder.to_archive()` and restored with `Builder::from_archive()` or `builder.with_archive()`.
+A **builder archive** is a serialized snapshot of a `Builder` (i.e. of a working store). The term *working store* refers to the unsigned `Builder` itself; the *builder archive* is its serialized `.c2pa` form. The archive contains the manifest definition, all resources, and any ingredients that were added. It is created by `builder.to_archive()` and restored with `Builder::from_archive()` or `builder.with_archive()`.
 
 An **ingredient archive** contains the manifest store from an asset that was added as an ingredient.
 
@@ -446,10 +446,10 @@ The SDK supports two approaches for producing an ingredient archive. They share 
 
 | Approach | Entry point | Status |
 | --- | --- | --- |
-| Dedicated ingredient archive APIs | `add_ingredient` then `write_ingredient_archive(id, stream)` | **Current** |
-| Read-filter-rebuild APIs | `Builder` + `add_ingredient` + `to_archive`, then `Reader` + manual JSON | **Legacy** (see [catalog migration guide](#migration-guide-catalog-pattern) and [extraction migration guide](#migration-guide-ingredient-extraction)) |
+| Dedicated ingredient archive APIs | `add_ingredient` then `write_ingredient_archive(id, stream)` | **Recommended** |
+| Read-filter-rebuild pattern | `Builder` + `add_ingredient` + `to_archive`, then `Reader` + manual JSON | **Older pattern** (see [catalog migration guide](#migration-guide-catalog-pattern) and [extraction migration guide](#migration-guide-ingredient-extraction)) |
 
-The dedicated API requires the `builder.generate_c2pa_archive` setting on the producing builder. For the full contract (id resolution, error cases, examples), see [Single-ingredient archive APIs](./working-stores.md#single-ingredient-archive-apis) in the working stores guide.
+For the full contract (id resolution, error cases, examples), see [Single-ingredient archive APIs](./working-stores.md#single-ingredient-archive-apis) in the working stores guide.
 
 ## The ingredients catalog pattern
 
@@ -479,19 +479,21 @@ flowchart TD
 
 The catalog can be implemented two ways. The dedicated (ingredient) archives API uses one archive per ingredient.
 
-A legacy approach uses one multi-ingredient builder archive and the read-filter-rebuild pattern to slice out a subset of ingredients (and resources).
+Alternatively, a single builder archive can hold many ingredients (a multi-ingredient builder archive is still just a builder archive, not a deprecated format), and the read-filter-rebuild *pattern* slices out a subset of ingredients (and resources) from it. The pattern is the older approach; the archive itself is not legacy.
 
 ### Dedicated archives API: one ingredient per archive
 
-The producer registers each ingredient on a builder and writes one archive per ingredient, keyed by `instance_id`. The consumer assembles a final builder by loading only the archives it needs via `add_ingredient_from_archive`. The producing builder must have the `builder.generate_c2pa_archive` setting enabled.
+The producer registers each ingredient on a builder and writes one archive per ingredient, keyed by `instance_id`. The consumer assembles a final builder by loading only the archives it needs via `add_ingredient_from_archive`.
 
 The first argument to `write_ingredient_archive` is the *archive key*: it locates the ingredient on the producer (matched against either `label` or `instance_id`) and becomes the `ingredientIds` value to use on the signing builder. See [Lookup keys and action linking](working-stores.md#lookup-keys-and-action-linking) for the full rules.
+
+> [!NOTE]
+> `"relationship": "componentOf"` is shown explicitly below, but `componentOf` is the default the SDK applies when `relationship` is omitted.
 
 Producer side, build the catalog:
 
 ```cpp
 auto settings = c2pa::Settings();
-settings.set("builder.generate_c2pa_archive", "true");
 auto context = c2pa::Context::ContextBuilder()
     .with_settings(std::move(settings))
     .create_context();
@@ -503,12 +505,17 @@ catalog_builder.add_ingredient(
 catalog_builder.add_ingredient(
     R"({"title": "photo-B.jpg", "relationship": "componentOf", "instance_id": "catalog:ingredient-B"})",
     "photo-B.jpg");
+catalog_builder.add_ingredient(
+    R"({"title": "photo-C.jpg", "relationship": "componentOf", "instance_id": "catalog:ingredient-C"})",
+    "photo-C.jpg");
 
 // One archive per ingredient, keyed by the instance_id used at registration.
 std::stringstream archive_a(std::ios::in | std::ios::out | std::ios::binary);
 std::stringstream archive_b(std::ios::in | std::ios::out | std::ios::binary);
+std::stringstream archive_c(std::ios::in | std::ios::out | std::ios::binary);
 catalog_builder.write_ingredient_archive("catalog:ingredient-A", archive_a);
 catalog_builder.write_ingredient_archive("catalog:ingredient-B", archive_b);
+catalog_builder.write_ingredient_archive("catalog:ingredient-C", archive_c);
 ```
 
 Consumer side, pick one archive and load it:
@@ -523,7 +530,7 @@ final_builder.sign(source_path, output_path, signer);
 
 The signed output contains exactly the picked ingredient (`photo-B.jpg` here). `archive_a` stays unused.
 
-A single action can link several ingredients loaded this way. With three archives (`ing-a`, `ing-b`, `ing-c`) loaded into one signing builder, a `c2pa.placed` action that lists all three ids in `ingredientIds` resolves to three distinct ingredient URLs after signing:
+A single action can link several ingredients loaded this way. With the three archives from the producer above (`catalog:ingredient-A`, `catalog:ingredient-B`, `catalog:ingredient-C`) loaded into one signing builder, a `c2pa.placed` action that lists all three ids in `ingredientIds` resolves to three distinct ingredient URLs after signing:
 
 ```cpp
 auto signing_builder = c2pa::Builder(context, R"({
@@ -534,7 +541,7 @@ auto signing_builder = c2pa::Builder(context, R"({
             "actions": [{
                 "action": "c2pa.placed",
                 "parameters": {
-                    "ingredientIds": ["ing-a", "ing-b", "ing-c"]
+                    "ingredientIds": ["catalog:ingredient-A", "catalog:ingredient-B", "catalog:ingredient-C"]
                 }
             }]
         }
@@ -607,13 +614,12 @@ builder.sign(source_path, output_path, signer);
 
 #### Migration guide: catalog pattern
 
-Switch to the dedicated ingredient archive APIs: set `instance_id` per ingredient, call `write_ingredient_archive` once per ingredient on the producer, and `add_ingredient_from_archive` on the consumer. No JSON parsing or `add_resource` loops required. The producing builder needs `builder.generate_c2pa_archive` enabled.
+Switch to the dedicated ingredient archive APIs: set `instance_id` per ingredient, call `write_ingredient_archive` once per ingredient on the producer, and `add_ingredient_from_archive` on the consumer. No JSON parsing or `add_resource` loops required.
 
 Producer side:
 
 ```cpp
 auto settings = c2pa::Settings();
-settings.set("builder.generate_c2pa_archive", "true");
 auto context = c2pa::Context::ContextBuilder()
     .with_settings(std::move(settings))
     .create_context();
@@ -651,14 +657,18 @@ The legacy read-filter-rebuild APIs fit when the catalog already exists as one m
 
 Setting `instance_id` on an ingredient gives it a stable, caller-controlled identifier. This field survives archiving and signing unchanged, so it can locate a specific ingredient in a catalog. The `description` and `informational_URI` fields also survive and can carry additional metadata about the ingredient's origin.
 
+For the dedicated archive methods, `instance_id` is the preferred key: it is the only one of these identifiers observable in the signed manifest. A `label` is a builder-only linking key and does not appear in the signed output (see [Lookup keys and action linking](working-stores.md#lookup-keys-and-action-linking)).
+
 For the legacy load path (`add_ingredient(json, "application/c2pa", archive)`), `instance_id` cannot be used as a linking key in `ingredientIds`; use `label` instead (see [Linking an archived ingredient to an action](#linking-an-archived-ingredient-to-an-action)). For the dedicated `write_ingredient_archive` + `add_ingredient_from_archive` ingredient archive APIs, the archive key can be either `label` or `instance_id` and becomes the `ingredientIds` value (see [Lookup keys and action linking](working-stores.md#lookup-keys-and-action-linking)).
 
 With the dedicated single-ingredient API, `instance_id` also serves as the lookup key passed to `write_ingredient_archive`. Set it on `add_ingredient`, then pass the same value to write the archive:
 
+> [!NOTE]
+> A caller-set `instance_id` replaces the ingredient asset's own XMP `instance_id`. Use a value you control (as in `catalog:photo-A` below) when the archive key matters more than preserving the asset's original XMP id.
+
 ```cpp
 // Producer: register ingredient with instance_id, write its archive.
 auto settings = c2pa::Settings();
-settings.set("builder.generate_c2pa_archive", "true");
 auto context = c2pa::Context::ContextBuilder()
     .with_settings(std::move(settings))
     .create_context();
@@ -797,11 +807,10 @@ A way to extract a specific ingredient from a working store is with the dedicate
 
 #### Dedicated ingredient archive APIs
 
-The producer registers each ingredient keyed by `instance_id`, writes one archive per ingredient, and the consumer loads only the needed one. The `builder.generate_c2pa_archive` setting must be enabled on the producing builder.
+The producer registers each ingredient keyed by `instance_id`, writes one archive per ingredient, and the consumer loads only the needed one.
 
 ```cpp
 auto settings = c2pa::Settings();
-settings.set("builder.generate_c2pa_archive", "true");
 auto context = c2pa::Context::ContextBuilder()
     .with_settings(std::move(settings))
     .create_context();
@@ -923,7 +932,7 @@ new_builder.sign(source_path, output_path, signer);
 | --- | --- | --- |
 | Archive | `builder.to_archive(stream)` (full builder) | `builder.write_ingredient_archive(id, stream)` (one ingredient) |
 | Load | `Reader` + JSON parse + filter loop + `add_resource` per resource | `builder2.add_ingredient_from_archive(stream)` |
-| Setting required | None | `builder.generate_c2pa_archive = "true"` on producer |
+| Setting required | None | `builder.generate_c2pa_archive = "true"` on producer (current default) |
 
 The dedicated ingredient archive APIs require no JSON parsing and no `add_resource` calls. Each archive holds exactly one ingredient.
 
@@ -1113,7 +1122,6 @@ Producer side:
 
 ```cpp
 auto settings = c2pa::Settings();
-settings.set("builder.generate_c2pa_archive", "true");
 auto context = c2pa::Context::ContextBuilder()
     .with_settings(std::move(settings))
     .create_context();
