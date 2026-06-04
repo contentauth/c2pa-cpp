@@ -419,7 +419,7 @@ for (auto& assertion : manifest["assertions"]) {
 | --- | --- | --- |
 | **Who controls it** | Caller (any string) | Caller (any string, or from XMP metadata) |
 | **Priority for linking** | Primary: checked first | Fallback: used when label is absent/empty |
-| **When to use** | JSON-defined manifests where the caller controls the ingredient definition | Programmatic workflows using `read_ingredient_file()` or XMP-based IDs |
+| **When to use** | JSON-defined manifests where the caller controls the ingredient definition | Programmatic workflows using `Builder::add_ingredient()` or XMP-based IDs |
 | **Survives signing** | SDK may reassign the actual assertion label | Unchanged |
 | **Stable across rebuilds** | The caller controls the build-time value; the post-signing label may change | Yes, always the same set value |
 
