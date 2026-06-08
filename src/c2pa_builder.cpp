@@ -198,7 +198,7 @@ namespace c2pa
     {
         auto stream = detail::open_file_binary<std::ifstream>(source_path);
         auto format = detail::extract_file_extension(source_path);
-        add_ingredient(ingredient_json, format.c_str(), *stream);
+        add_ingredient(ingredient_json, format, *stream);
     }
 
     void Builder::add_action(const std::string &action_json)
