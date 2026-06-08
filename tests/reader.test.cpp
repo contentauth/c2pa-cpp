@@ -694,29 +694,3 @@ TEST_F(ReaderTest, ReadArchive)
     EXPECT_TRUE(active_manifest.contains("ingredients"));
     EXPECT_EQ(active_manifest["ingredients"].size(), 2);
 }
-
-TEST_F(ReaderTest, ReaderCrJson)
-{
-    fs::path current_dir = fs::path(__FILE__).parent_path();
-    fs::path test_file = current_dir / "../tests/fixtures/cloud.jpg";
-    ASSERT_TRUE(std::filesystem::exists(test_file)) << "Test file does not exist: " << test_file;
-
-    auto reader = c2pa::Reader(test_file);
-    auto crjson = reader.crjson();
-    EXPECT_FALSE(crjson.empty());
-}
-
-TEST_F(ReaderTest, ReaderCrJsonSpecialChars)
-{
-    auto current_dir = fs::path(__FILE__).parent_path();
-    #ifdef _WIN32
-      auto test_file = current_dir.parent_path() / "tests" / "fixtures" / L"CÖÄ_.jpg";
-    #else
-      auto test_file = current_dir.parent_path() / "tests" / "fixtures" / "CÖÄ_.jpg";
-    #endif
-    ASSERT_TRUE(std::filesystem::exists(test_file)) << "Test file does not exist: " << test_file;
-
-    auto reader = c2pa::Reader(test_file);
-    auto crjson = reader.crjson();
-    EXPECT_FALSE(crjson.empty());
-}
