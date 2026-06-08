@@ -270,7 +270,7 @@ namespace c2pa
             throw std::runtime_error("Failed to open destination file: " + dest_path.string());
         }
         auto format = detail::extract_file_extension(dest_path);
-        auto result = sign(format.c_str(), *source, dest, signer);
+        auto result = sign(format, *source, dest, signer);
         return result;
     }
 
@@ -302,7 +302,7 @@ namespace c2pa
             throw std::runtime_error("Failed to open destination file: " + dest_path.string());
         }
         auto format = detail::extract_file_extension(dest_path);
-        auto result = sign(format.c_str(), *source, dest);
+        auto result = sign(format, *source, dest);
         return result;
     }
 
