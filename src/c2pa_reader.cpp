@@ -167,6 +167,11 @@ namespace c2pa
         return detail::c_string_to_string(c2pa_reader_detailed_json(c2pa_reader));
     }
 
+    std::string Reader::crjson() const
+    {
+        return detail::c_string_to_string(c2pa_reader_crjson(c2pa_reader));
+    }
+
     [[nodiscard]] std::optional<std::string> Reader::remote_url() const {
         auto url = c2pa_reader_remote_url(c2pa_reader);
         if (url == nullptr) { return std::nullopt; }
