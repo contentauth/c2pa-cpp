@@ -14,10 +14,10 @@
 cmake_minimum_required(VERSION 3.27)
 
 # This is the current version of this C++ project
-project(c2pa-c VERSION 0.23.14)
+project(c2pa-c VERSION 0.24.0)
 
 # Set the version of the c2pa_rs library used
-set(C2PA_VERSION "0.85.2")
+set(C2PA_VERSION "0.86.1")
 
 set(CMAKE_POLICY_DEFAULT_CMP0135 NEW)
 set(CMAKE_C_STANDARD 17)
