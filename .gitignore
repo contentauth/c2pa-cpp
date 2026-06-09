@@ -9,6 +9,7 @@ cmake_install.cmake
 CMakeOutput.log
 CMakeError.log
 CMakeLists.txt.user
+compile_commands.json
 
 # Doxygen docs
 /api-docs/_build
