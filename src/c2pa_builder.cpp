@@ -117,6 +117,7 @@ namespace c2pa
         }
 
         builder = c2pa_builder_with_archive(base, c_archive.c_stream);
+        base = nullptr;
         if (builder == nullptr) {
             throw C2paException();
         }
