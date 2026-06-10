@@ -46,9 +46,16 @@ inline std::vector<std::string> c_mime_types_to_vector(const char* const* mime_t
   std::vector<std::string> result;
   if (mime_types == nullptr) { return result; }
 
-  result.reserve(count);
-  for(uintptr_t i = 0; i < count; i++) {
-    result.emplace_back(mime_types[i]);
+  try {
+    result.reserve(count);
+    for(uintptr_t i = 0; i < count; i++) {
+      if (mime_types[i] != nullptr) {
+        result.emplace_back(mime_types[i]);
+      }
+    }
+  } catch (...) {
+    c2pa_free_string_array(mime_types, count);
+    throw;
   }
 
   c2pa_free_string_array(mime_types, count);
@@ -107,29 +114,37 @@ struct StreamSeekTraits<std::iostream> {
 };
 
 /// Seeker impl.
+/// Exceptions must not unwind into Rust/C, so any throw
+/// is converted to an IoError return.
 template<typename Stream>
 intptr_t stream_seeker(StreamContext* context, intptr_t offset, C2paSeekMode whence) {
-    auto* stream = reinterpret_cast<Stream*>(context);
-    if (!is_stream_usable(stream)) {
+    try {
+        auto* stream = reinterpret_cast<Stream*>(context);
+        if (!is_stream_usable(stream)) {
+            return stream_error_return(StreamError::IoError);
+        }
+        const std::ios_base::seekdir dir = whence_to_seekdir(whence);
+        stream->clear();
+        StreamSeekTraits<Stream>::seek(stream, offset, dir);
+        if (stream->fail()) {
+            return stream_error_return(StreamError::InvalidArgument);
+        }
+        if (stream->bad()) {
+            return stream_error_return(StreamError::IoError);
+        }
+        const int64_t pos = StreamSeekTraits<Stream>::tell(stream);
+        if (pos < 0) {
+            return stream_error_return(StreamError::IoError);
+        }
+        return static_cast<intptr_t>(pos);
+    } catch (...) {
         return stream_error_return(StreamError::IoError);
     }
-    const std::ios_base::seekdir dir = whence_to_seekdir(whence);
-    stream->clear();
-    StreamSeekTraits<Stream>::seek(stream, offset, dir);
-    if (stream->fail()) {
-        return stream_error_return(StreamError::InvalidArgument);
-    }
-    if (stream->bad()) {
-        return stream_error_return(StreamError::IoError);
-    }
-    const int64_t pos = StreamSeekTraits<Stream>::tell(stream);
-    if (pos < 0) {
-        return stream_error_return(StreamError::IoError);
-    }
-    return static_cast<intptr_t>(pos);
 }
 
 /// Reader impl.
+/// Exceptions must not unwind into Rust/C, so any throw
+/// is converted to an IoError return.
 template<typename Stream>
 intptr_t stream_reader(StreamContext* context, uint8_t* buffer, intptr_t size) {
     if (!context || !buffer) {
@@ -141,37 +156,47 @@ intptr_t stream_reader(StreamContext* context, uint8_t* buffer, intptr_t size) {
     if (size == 0) {
         return 0;
     }
-    auto* stream = reinterpret_cast<Stream*>(context);
-    if (!is_stream_usable(stream)) {
-        return stream_error_return(StreamError::IoError);
-    }
-    stream->read(reinterpret_cast<char*>(buffer), size);
-    if (stream->fail()) {
-        if (!stream->eof()) {
-            return stream_error_return(StreamError::InvalidArgument);
+    try {
+        auto* stream = reinterpret_cast<Stream*>(context);
+        if (!is_stream_usable(stream)) {
+            return stream_error_return(StreamError::IoError);
         }
-    }
-    if (stream->bad()) {
+        stream->read(reinterpret_cast<char*>(buffer), size);
+        if (stream->fail()) {
+            if (!stream->eof()) {
+                return stream_error_return(StreamError::InvalidArgument);
+            }
+        }
+        if (stream->bad()) {
+            return stream_error_return(StreamError::IoError);
+        }
+        return static_cast<intptr_t>(stream->gcount());
+    } catch (...) {
         return stream_error_return(StreamError::IoError);
     }
-    return static_cast<intptr_t>(stream->gcount());
 }
 
 /// Get stream from context, used by writer and flusher.
+/// Exceptions must not unwind into Rust/C, so any throw
+/// is converted to an IoError return.
 template<typename Stream, typename Op>
 intptr_t stream_op(StreamContext* context, Op op) {
-    auto* stream = reinterpret_cast<Stream*>(context);
-    if (!is_stream_usable(stream)) {
+    try {
+        auto* stream = reinterpret_cast<Stream*>(context);
+        if (!is_stream_usable(stream)) {
+            return stream_error_return(StreamError::IoError);
+        }
+        const intptr_t result = op(stream);
+        if (stream->fail()) {
+            return stream_error_return(StreamError::InvalidArgument);
+        }
+        if (stream->bad()) {
+            return stream_error_return(StreamError::IoError);
+        }
+        return result;
+    } catch (...) {
         return stream_error_return(StreamError::IoError);
     }
-    const intptr_t result = op(stream);
-    if (stream->fail()) {
-        return stream_error_return(StreamError::InvalidArgument);
-    }
-    if (stream->bad()) {
-        return stream_error_return(StreamError::IoError);
-    }
-    return result;
 }
 
 /// Writer impl.
@@ -236,11 +261,17 @@ inline std::string c_string_to_string(T* c_result) {
 /// @return Vector containing the bytes (throws if null or negative size)
 /// @details This helper extracts the pattern of checking C API results,
 ///          copying to a vector, and freeing the C-allocated memory.
-///          The C API contract is: if result < 0 or data == nullptr, the operation failed.
+///          The C API contract is: if result < 0, the operation failed. A null
+///          data pointer with size == 0 is a valid empty result (the C API
+///          returns null for empty byte arrays).
 inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int64_t size) {
-    if (size < 0 || data == nullptr) {
+    if (size < 0 || (data == nullptr && size > 0)) {
         c2pa_free(data);  // May be null or allocated, c2pa_free handles both
         throw C2paException();
+    }
+    if (size == 0) {
+        c2pa_free(data);
+        return {};
     }
 
     auto result = std::vector<unsigned char>(data, data + size);
