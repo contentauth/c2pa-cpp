@@ -6005,3 +6005,57 @@ TEST_F(BuilderTest, ArchiveIngredientWithProvenanceRoundTripAndReuse)
     EXPECT_EQ(out_ingredients[0]["title"], "C.jpg");
     EXPECT_EQ(out_ingredients[0]["relationship"], "componentOf");
 }
+
+TEST(SignerTest, InvalidCredentialsThrowFromConstructor) {
+    EXPECT_THROW(
+        c2pa::Signer("Es256", "not a certificate", "not a private key"),
+        c2pa::C2paException);
+}
+
+// Regression: stream callbacks must not let C++ exceptions unwind into the
+// Rust FFI (undefined behavior). With exceptions enabled on the source stream,
+// signing must either succeed or surface a C2paException — never crash.
+TEST_F(BuilderTest, SignSourceStreamWithExceptionsEnabledDoesNotCrash) {
+    auto image_path = c2pa_test::get_fixture_path("A.jpg");
+    auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+
+    auto context = std::make_shared<c2pa::Context>();
+    auto builder = c2pa::Builder(context, manifest);
+    auto signer = c2pa_test::create_test_signer();
+
+    std::ifstream source(image_path, std::ios::binary);
+    ASSERT_TRUE(source.is_open());
+    source.exceptions(std::ios::failbit | std::ios::badbit);
+
+    std::stringstream memory_buffer(std::ios::in | std::ios::out | std::ios::binary);
+    std::iostream& dest = memory_buffer;
+
+    try {
+        auto manifest_data = builder.sign("image/jpeg", source, dest, signer);
+        EXPECT_FALSE(manifest_data.empty());
+    } catch (const c2pa::C2paException&) {
+        // An error result is acceptable; crossing the FFI with an exception is not.
+    }
+}
+
+// Regression: CppOStream must upcast to std::ostream* before type erasure.
+// With a std::fstream (where the std::ostream base is at a nonzero offset),
+// the callbacks previously operated on a misadjusted object pointer.
+TEST_F(BuilderTest, ArchiveToFstreamBackedCppOStream) {
+    auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+
+    auto context = std::make_shared<c2pa::Context>();
+    auto builder = c2pa::Builder(context, manifest);
+
+    auto archive_path = get_temp_path("archive_fstream_cppostream.bin");
+    std::fstream dest(archive_path,
+                      std::ios_base::binary | std::ios_base::trunc |
+                          std::ios_base::in | std::ios_base::out);
+    ASSERT_TRUE(dest.is_open());
+
+    c2pa::CppOStream c_dest(dest);
+    ASSERT_EQ(c2pa_builder_to_archive(builder.c2pa_builder(), c_dest.c_stream), 0);
+    dest.flush();
+
+    EXPECT_GT(std::filesystem::file_size(archive_path), 0u);
+}

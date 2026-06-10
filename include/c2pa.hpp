@@ -567,7 +567,8 @@ namespace c2pa
         explicit CppIStream(IStream &istream) {
             static_assert(std::is_base_of<std::istream, IStream>::value,
                       "Stream must be derived from std::istream");
-            c_stream = c2pa_create_stream(reinterpret_cast<StreamContext *>(&istream), reader, seeker, writer, flusher);
+            // Upcast to std::istream* before type erasure; the callbacks cast the context back to std::istream*
+            c_stream = c2pa_create_stream(reinterpret_cast<StreamContext *>(static_cast<std::istream *>(&istream)), reader, seeker, writer, flusher);
             if (c_stream == nullptr) {
                 throw C2paException("Failed to create input stream wrapper: is stream open and valid?");
             }
@@ -628,7 +629,8 @@ namespace c2pa
         template <typename OStream>
         explicit CppOStream(OStream &ostream) {
             static_assert(std::is_base_of<std::ostream, OStream>::value, "Stream must be derived from std::ostream");
-            c_stream = c2pa_create_stream(reinterpret_cast<StreamContext *>(&ostream), reader, seeker, writer, flusher);
+            // Upcast to std::ostream* before type erasure; the callbacks cast the context back to std::ostream*
+            c_stream = c2pa_create_stream(reinterpret_cast<StreamContext *>(static_cast<std::ostream *>(&ostream)), reader, seeker, writer, flusher);
             if (c_stream == nullptr) {
                 throw C2paException("Failed to create output stream wrapper: is stream open and valid?");
             }
@@ -687,7 +689,8 @@ namespace c2pa
         template <typename IOStream>
         CppIOStream(IOStream &iostream) {
             static_assert(std::is_base_of<std::iostream, IOStream>::value, "Stream must be derived from std::iostream");
-            c_stream = c2pa_create_stream(reinterpret_cast<StreamContext *>(&iostream), reader, seeker, writer, flusher);
+            // Upcast to std::iostream* before type erasure; the callbacks cast the context back to std::iostream*
+            c_stream = c2pa_create_stream(reinterpret_cast<StreamContext *>(static_cast<std::iostream *>(&iostream)), reader, seeker, writer, flusher);
             if (c_stream == nullptr) {
                 throw C2paException("Failed to create I/O stream wrapper: is stream open and valid?");
             }

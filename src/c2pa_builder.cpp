@@ -51,8 +51,8 @@ namespace c2pa
         init_from_context(context);
 
         // Apply the manifest definition to the Builder.
-        // Note: c2pa_builder_with_definition always consumes the builder pointer,
-        // so the original pointer is invalid after this call regardless of success/error.
+        // Note: c2pa_builder_with_definition consumes the builder pointer on success
+        // and on operation failure.
         C2paBuilder* updated = c2pa_builder_with_definition(builder, manifest_json.c_str());
         builder = nullptr;
         if (updated == nullptr) {
