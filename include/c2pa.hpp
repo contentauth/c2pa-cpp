@@ -1289,9 +1289,11 @@ namespace c2pa
         void to_archive(const std::filesystem::path &dest_path);
 
         /// @brief Write a single-ingredient archive for the named ingredient.
-        /// @param ingredient_id The instance_id of the ingredient within this builder.
+        /// @param ingredient_id The ingredient's `label` if set, otherwise its `instance_id`,
+        ///        as supplied to add_ingredient.
         /// @param dest The output stream to write the ingredient archive to.
-        /// @note Requires the `generate_c2pa_archive` context setting to be enabled.
+        /// @note Requires the `generate_c2pa_archive` context setting to be enabled
+        ///       (enabled by default).
         /// @throws C2paException for errors encountered by the C2PA library.
         void write_ingredient_archive(const std::string &ingredient_id, std::ostream &dest);
 

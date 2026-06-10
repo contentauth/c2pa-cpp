@@ -561,7 +561,7 @@ signing_builder.sign(source_path, output_path, signer);
 ### Legacy catalog: read-filter-rebuild APIs
 
 > [!NOTE]
-> **Legacy approach.** This pattern requires manual JSON parsing and `add_resource` loops to transfer binary data. See [Migration guide](#migration-guide-catalog-pattern) to use use the [dedicated ingredient archive APIs](#dedicated-archives-api-one-ingredient-per-archive) instead.
+> **Legacy approach.** This pattern requires manual JSON parsing and `add_resource` loops to transfer binary data. See [Migration guide](#migration-guide-catalog-pattern) to use the [dedicated ingredient archive APIs](#dedicated-archives-api-one-ingredient-per-archive) instead.
 
 Use this approach when the catalog already exists as a single `.c2pa` builder archive containing many ingredients and you need to pick a subset by reading, filtering, and rebuilding.
 

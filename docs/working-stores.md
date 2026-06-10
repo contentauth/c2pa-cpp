@@ -522,7 +522,6 @@ Producer — register the ingredient and write the archive, keyed by `instance_i
 
 ```cpp
 auto settings = c2pa::Settings();
-settings.set("builder.generate_c2pa_archive", "true");
 auto context = c2pa::Context::ContextBuilder()
     .with_settings(std::move(settings))
     .create_context();
@@ -743,7 +742,7 @@ Two archive API families share the same binary format but serve different purpos
 | APIs | `to_archive`, `from_archive`, `with_archive` | `write_ingredient_archive`, `add_ingredient_from_archive` |
 | What is archived | Entire builder: manifest definition + all ingredients + all resources | One ingredient only (other builder state is omitted) |
 | Typical use | Checkpoint or transfer a manifest-in-progress between sessions or machines | Ingredient catalog; selectively load individual ingredients at sign time |
-| Requires setting | None | `builder.generate_c2pa_archive = true` on the producing builder |
+| Requires setting | None | `builder.generate_c2pa_archive = true` on the producing builder (this is the current default) |
 | Linking key | N/A (full builder is restored as-is) | Archive key (`label` or `instance_id`) flows through automatically as `ingredientIds` value |
 
 Use `to_archive` / `from_archive` to pause and resume a signing workflow, or to hand off a complete manifest-in-progress to another process or machine. Use `write_ingredient_archive` / `add_ingredient_from_archive` to distribute or cache individual ingredients independently, or to assemble a manifest from a catalog of pre-archived ingredients at sign time.
