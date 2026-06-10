@@ -24,6 +24,15 @@ set(CMAKE_C_STANDARD 17)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "13.3")
 
+# Default to an optimized build when the caller didn't pick a type.
+# Skipped for multi-config generators (Visual Studio, Xcode), which choose at build time.
+get_property(_is_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+if(NOT _is_multi_config AND NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "Build type" FORCE)
+    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
+        Debug Release RelWithDebInfo MinSizeRel)
+endif()
+
 if(MSVC)
 add_compile_options(/utf-8)
 endif()
