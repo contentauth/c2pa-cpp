@@ -694,3 +694,27 @@ TEST_F(ReaderTest, ReadArchive)
     EXPECT_TRUE(active_manifest.contains("ingredients"));
     EXPECT_EQ(active_manifest["ingredients"].size(), 2);
 }
+
+TEST_F(ReaderTest, ReadCrJson)
+{
+    fs::path current_dir = fs::path(__FILE__).parent_path();
+    fs::path test_file = current_dir / "../tests/fixtures/cloud.jpg";
+
+    auto reader = c2pa::Reader(test_file);
+    auto crjson = reader.crjson();
+    EXPECT_FALSE(crjson.empty());
+}
+
+TEST_F(ReaderTest, ReadCrJsonSpecialChars)
+{
+    auto current_dir = fs::path(__FILE__).parent_path();
+    #ifdef _WIN32
+      auto test_file = current_dir.parent_path() / "tests" / "fixtures" / L"CÖÄ_.jpg";
+    #else
+      auto test_file = current_dir.parent_path() / "tests" / "fixtures" / "CÖÄ_.jpg";
+    #endif
+
+    auto reader = c2pa::Reader(test_file);
+    auto crjson = reader.crjson();
+    EXPECT_FALSE(crjson.empty());
+}

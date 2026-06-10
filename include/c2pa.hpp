@@ -935,6 +935,14 @@ namespace c2pa
         /// @throws C2paException for errors encountered by the C2PA library.
         std::string detailed_json() const;
 
+        /// @brief Get the manifest store as a pretty-printed crJSON string.
+        /// @details crJSON is a standardized JSON format for C2PA manifest data.
+        ///          This call is infallible at yields valid empty JSON ("{}") if
+        ///          there are no Content Credentials.
+        /// @return The manifest store as a crJSON string.
+        /// @throws C2paException if the underlying C call returns null.
+        std::string crjson() const;
+
         /// @brief Get a resource from the reader and write it to a file.
         /// @param uri The URI of the resource.
         /// @param path The file path to write the resource to.
