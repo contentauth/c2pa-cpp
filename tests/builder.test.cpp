@@ -6012,10 +6012,7 @@ TEST(SignerTest, InvalidCredentialsThrowFromConstructor) {
         c2pa::C2paException);
 }
 
-// Regression: stream callbacks must not let C++ exceptions unwind into the
-// Rust FFI (undefined behavior). With exceptions enabled on the source stream,
-// signing must either succeed or surface a C2paException — never crash.
-TEST_F(BuilderTest, SignSourceStreamWithExceptionsEnabledDoesNotCrash) {
+TEST_F(BuilderTest, SignSourceStreamWithExceptions) {
     auto image_path = c2pa_test::get_fixture_path("A.jpg");
     auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
 
@@ -6038,9 +6035,6 @@ TEST_F(BuilderTest, SignSourceStreamWithExceptionsEnabledDoesNotCrash) {
     }
 }
 
-// Regression: CppOStream must upcast to std::ostream* before type erasure.
-// With a std::fstream (where the std::ostream base is at a nonzero offset),
-// the callbacks previously operated on a misadjusted object pointer.
 TEST_F(BuilderTest, ArchiveToFstreamBackedCppOStream) {
     auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
 
