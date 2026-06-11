@@ -34,6 +34,7 @@ namespace c2pa
         }
         if (c2pa_settings_update_from_string(settings_ptr, data.c_str(), format.c_str()) != 0) {
             c2pa_free(settings_ptr);
+            settings_ptr = nullptr;
             throw C2paException();
         }
     }

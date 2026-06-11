@@ -46,15 +46,16 @@ namespace c2pa
             throw C2paException("Invalid Context provider IContextProvider");
         }
 
+        // Create the stream wrapper before the reader handle
+        cpp_stream = std::make_unique<CppIStream>(stream);
+
         c2pa_reader = c2pa_reader_from_context(context.c_context());
         if (c2pa_reader == nullptr) {
             throw C2paException("Failed to create reader from context");
         }
 
-        cpp_stream = std::make_unique<CppIStream>(stream);
         // Update reader with stream.
-        // Note: c2pa_reader_with_stream always consumes the reader pointer,
-        // so the original pointer is invalid after this call regardless of success/error.
+        // Note: c2pa_reader_with_stream consumes the reader pointer.
         C2paReader* updated = c2pa_reader_with_stream(c2pa_reader, format.c_str(), cpp_stream->c_stream);
         c2pa_reader = nullptr;
         if (updated == nullptr) {
@@ -71,15 +72,10 @@ namespace c2pa
             throw C2paException("Invalid Context provider IContextProvider");
         }
 
-        c2pa_reader = c2pa_reader_from_context(context.c_context());
-        if (c2pa_reader == nullptr) {
-            throw C2paException("Failed to create reader from context");
-        }
-
-        // Create owned stream that will live as long as the Reader
+        // Create the streams before the reader handle.
+        // Create owned stream that will live as long as the Reader.
         owned_stream = std::make_unique<std::ifstream>(source_path, std::ios::binary);
         if (!owned_stream->is_open()) {
-            c2pa_free(c2pa_reader);
             throw std::system_error(errno, std::system_category(), "Failed to open file: " + source_path.string());
         }
 
@@ -87,7 +83,13 @@ namespace c2pa
 
         // CppIStream stores reference to owned_stream, which lives as long as Reader
         cpp_stream = std::make_unique<CppIStream>(*owned_stream);
-        // Note: c2pa_reader_with_stream always consumes the reader pointer.
+
+        c2pa_reader = c2pa_reader_from_context(context.c_context());
+        if (c2pa_reader == nullptr) {
+            throw C2paException("Failed to create reader from context");
+        }
+
+        // Note: c2pa_reader_with_stream consumes the reader pointer.
         C2paReader* updated = c2pa_reader_with_stream(c2pa_reader, extension.c_str(), cpp_stream->c_stream);
         c2pa_reader = nullptr;
         if (updated == nullptr) {
@@ -175,15 +177,20 @@ namespace c2pa
     [[nodiscard]] std::optional<std::string> Reader::remote_url() const {
         auto url = c2pa_reader_remote_url(c2pa_reader);
         if (url == nullptr) { return std::nullopt; }
-        std::string url_str(url);
         // The C2PA library returns a `const char*` that needs to be released.
         // The underlying `char*` is mutable; however, to indicate the value
         // shouldn't be modified, it's returned as a const char*.
         //
         // TODO: Revisit after determining how we want c2pa-rs to handle
         //       strings that shouldn't be modified by our bindings.
-        c2pa_free(url);
-        return url_str;
+        try {
+            std::string url_str(url);
+            c2pa_free(url);
+            return url_str;
+        } catch (...) {
+            c2pa_free(url);
+            throw;
+        }
     }
 
     int64_t Reader::get_resource(const std::string &uri, const std::filesystem::path &path)

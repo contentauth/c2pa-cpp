@@ -71,12 +71,20 @@ namespace c2pa
     {
         // Pass the C++ callback as a context to our static callback wrapper.
         signer = c2pa_signer_create((const void *)callback, &signer_passthrough, alg, sign_cert.c_str(), validate_tsa_uri(tsa_uri));
+        if (signer == nullptr)
+        {
+            throw C2paException();
+        }
     }
 
     Signer::Signer(const std::string &alg, const std::string &sign_cert, const std::string &private_key, const std::optional<std::string> &tsa_uri)
     {
         auto info = C2paSignerInfo { alg.c_str(), sign_cert.c_str(), private_key.c_str(), validate_tsa_uri(tsa_uri) };
         signer = c2pa_signer_from_info(&info);
+        if (signer == nullptr)
+        {
+            throw C2paException();
+        }
     }
 
     Signer::~Signer()
