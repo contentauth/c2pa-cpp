@@ -363,6 +363,26 @@ namespace c2pa
         to_archive(*dest);
     }
 
+    void Builder::write_ingredient_archive(const std::string &ingredient_id, std::ostream &dest)
+    {
+        CppOStream c_dest(dest);
+        int result = c2pa_builder_write_ingredient_archive(builder, ingredient_id.c_str(), c_dest.c_stream);
+        if (result < 0)
+        {
+            throw C2paException();
+        }
+    }
+
+    void Builder::add_ingredient_from_archive(std::istream &archive)
+    {
+        CppIStream c_archive(archive);
+        int result = c2pa_builder_add_ingredient_from_archive(builder, c_archive.c_stream);
+        if (result < 0)
+        {
+            throw C2paException();
+        }
+    }
+
     std::vector<unsigned char> Builder::data_hashed_placeholder(uintptr_t reserve_size, const std::string &format)
     {
         const unsigned char *c2pa_manifest_bytes = nullptr;
