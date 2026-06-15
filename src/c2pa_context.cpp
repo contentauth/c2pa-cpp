@@ -183,7 +183,11 @@ namespace c2pa
         if (!raw) {
             throw C2paException("Signer is not valid");
         }
-        c2pa_context_builder_set_signer(context_builder, raw);
+        // On error the signer may not have been consumed by the C API,
+        // surface an error
+        if (c2pa_context_builder_set_signer(context_builder, raw) != 0) {
+            throw C2paException();
+        }
         return *this;
     }
 

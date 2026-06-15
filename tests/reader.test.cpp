@@ -718,3 +718,21 @@ TEST_F(ReaderTest, ReadCrJsonSpecialChars)
     auto crjson = reader.crjson();
     EXPECT_FALSE(crjson.empty());
 }
+
+TEST(Reader, StreamWithExceptions) {
+    fs::path current_dir = fs::path(__FILE__).parent_path();
+    fs::path test_file = current_dir / "../tests/fixtures/C.jpg";
+
+    std::ifstream stream(test_file, std::ios::binary);
+    ASSERT_TRUE(stream.is_open());
+    stream.exceptions(std::ios::failbit | std::ios::badbit);
+
+    auto context = std::make_shared<c2pa::Context>();
+    try {
+        auto reader = c2pa::Reader(context, "image/jpeg", stream);
+        auto json_result = reader.json();
+        EXPECT_FALSE(json_result.empty());
+    } catch (const c2pa::C2paException&) {
+        // An error result is acceptable; crossing the FFI with an exception is not.
+    }
+}
