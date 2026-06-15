@@ -7133,6 +7133,8 @@ TEST_F(BuilderTest, ProvenanceSurvivesIngredientArchiveRoundTrip)
     EXPECT_EQ(ingredients[0]["instance_id"], "iid:provenance-roundtrip");
     EXPECT_TRUE(ingredients[0].contains("active_manifest"))
         << "Ingredient provenance (active_manifest) should survive the archive round-trip";
+}
+
 TEST(SignerTest, InvalidCredentialsThrowFromConstructor) {
     EXPECT_THROW(
         c2pa::Signer("Es256", "not a certificate", "not a private key"),
