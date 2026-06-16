@@ -3334,6 +3334,165 @@ TEST_F(BuilderTest, ExtractIngredientsFromArchiveToBuilder) {
   EXPECT_EQ(merged_ingredients.size(), 3) << "Merged builder should have all 3 ingredients from both archives";
 }
 
+// An ingredient's validations tate is carried over with the archive
+TEST_F(BuilderTest, IngredientArchivePreservesIngredientValidationState) {
+  const std::string kMismatchCode = "assertion.dataHash.mismatch";
+
+  // Check the artificial hash mismatch error is here
+  auto ingredient_has_mismatch = [&](const json& ingredient) -> bool {
+    if (ingredient.contains("validation_status")) {
+      for (const auto& s : ingredient["validation_status"]) {
+        if (s.value("code", "") == kMismatchCode) return true;
+      }
+    }
+    if (ingredient.contains("validation_results")) {
+      // validation_results: { activeManifest|ingredientDeltas: { failure: [ {code} ] } }
+      for (const auto& [scope, results] : ingredient["validation_results"].items()) {
+        if (!results.is_object() || !results.contains("failure")) continue;
+        for (const auto& f : results["failure"]) {
+          if (f.value("code", "") == kMismatchCode) return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  auto read_bytes = [](const fs::path& p) {
+    std::ifstream f(p, std::ios::binary);
+    return std::string((std::istreambuf_iterator<char>(f)), {});
+  };
+
+  // Force a dataHash mismatch in the ingredient
+  std::string corrupted = read_bytes(c2pa_test::get_fixture_path("C.jpg"));
+  ASSERT_GT(corrupted.size(), 4096u) << "fixture smaller than expected";
+  size_t flip_at = corrupted.size() - 1024;
+  corrupted[flip_at] = static_cast<char>(corrupted[flip_at] ^ 0xFF);
+
+  auto manifest = read_bytes(c2pa_test::get_fixture_path("training.json"));
+  {
+    auto probe_builder = c2pa::Builder(manifest);
+    std::stringstream corrupt_stream(corrupted,
+        std::ios::in | std::ios::out | std::ios::binary);
+    probe_builder.add_ingredient(
+        R"({"title": "C.jpg", "relationship": "componentOf", "label": "ing-bad"})",
+        "image/jpeg", corrupt_stream);
+
+    auto signer = c2pa_test::create_test_signer();
+    auto probe_out = get_temp_path("mismatch_probe.jpg");
+    probe_builder.sign(c2pa_test::get_fixture_path("A.jpg"), probe_out, signer);
+
+    auto probe_reader = c2pa::Reader(probe_out);
+    auto probe_parsed = json::parse(probe_reader.json());
+    std::string active = probe_parsed["active_manifest"];
+    bool found = false;
+    for (const auto& ing : probe_parsed["manifests"][active]["ingredients"]) {
+      if (ingredient_has_mismatch(ing)) { found = true; break; }
+    }
+    ASSERT_TRUE(found)
+        << "precondition failed: corrupted C.jpg did not yield a dataHash mismatch; "
+           "ingredients JSON: " << probe_parsed["manifests"][active]["ingredients"].dump(2);
+  }
+
+  // Archive the failing ingredient as-is
+  std::stringstream archive(std::ios::in | std::ios::out | std::ios::binary);
+  {
+    auto src_builder = c2pa::Builder(manifest);
+    std::stringstream corrupt_stream(corrupted,
+        std::ios::in | std::ios::out | std::ios::binary);
+    src_builder.add_ingredient(
+        R"({"title": "C.jpg", "relationship": "componentOf", "label": "ing-bad"})",
+        "image/jpeg", corrupt_stream);
+    src_builder.write_ingredient_archive("ing-bad", archive);
+  }
+
+  auto builder = c2pa::Builder(manifest);
+  archive.seekg(0);
+  ASSERT_NO_THROW(builder.add_ingredient_from_archive(archive));
+
+  auto signer = c2pa_test::create_test_signer();
+  auto output_path = get_temp_path("archive_mismatch_output.jpg");
+  ASSERT_NO_THROW(builder.sign(
+      c2pa_test::get_fixture_path("A.jpg"), output_path, signer));
+
+  // Verify ingredient state is still here
+  auto reader = c2pa::Reader(output_path);
+  auto parsed = json::parse(reader.json());
+  std::string active = parsed["active_manifest"];
+  auto ingredients = parsed["manifests"][active]["ingredients"];
+  ASSERT_EQ(ingredients.size(), 1u);
+
+  EXPECT_TRUE(ingredient_has_mismatch(ingredients[0]))
+      << "ingredient state was lost during the ingredient-archive round-trip";
+}
+
+// An ingredient's validations tate is carried over with the archive
+TEST_F(BuilderTest, LegacyBuilderArchivePreservesDataHashMismatch) {
+  const std::string kMismatchCode = "assertion.dataHash.mismatch";
+
+  auto ingredient_has_mismatch = [&](const json& ingredient) -> bool {
+    if (ingredient.contains("validation_status")) {
+      for (const auto& s : ingredient["validation_status"]) {
+        if (s.value("code", "") == kMismatchCode) return true;
+      }
+    }
+    if (ingredient.contains("validation_results")) {
+      for (const auto& [scope, results] : ingredient["validation_results"].items()) {
+        if (!results.is_object() || !results.contains("failure")) continue;
+        for (const auto& f : results["failure"]) {
+          if (f.value("code", "") == kMismatchCode) return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  auto read_bytes = [](const fs::path& p) {
+    std::ifstream f(p, std::ios::binary);
+    return std::string((std::istreambuf_iterator<char>(f)), {});
+  };
+
+  // Force a dataHash mismatch in the ingredient
+  std::string corrupted = read_bytes(c2pa_test::get_fixture_path("C.jpg"));
+  ASSERT_GT(corrupted.size(), 4096u) << "fixture smaller than expected";
+  size_t flip_at = corrupted.size() - 1024;
+  corrupted[flip_at] = static_cast<char>(corrupted[flip_at] ^ 0xFF);
+
+  auto manifest = read_bytes(c2pa_test::get_fixture_path("training.json"));
+
+  // Archive a builder holding the single failing ingredient (legacy whole-builder archive)
+  std::stringstream archive(std::ios::in | std::ios::out | std::ios::binary);
+  {
+    auto src_builder = c2pa::Builder(manifest);
+    std::stringstream corrupt_stream(corrupted,
+        std::ios::in | std::ios::out | std::ios::binary);
+    src_builder.add_ingredient(
+        R"({"title": "C.jpg", "relationship": "componentOf", "label": "ing-bad"})",
+        "image/jpeg", corrupt_stream);
+    src_builder.to_archive(archive);
+  }
+
+  // Add the archive as an ingredient on a new builder, then sign
+  auto builder = c2pa::Builder(manifest);
+  archive.seekg(0);
+  ASSERT_NO_THROW(builder.add_ingredient(
+      R"({"title": "C.jpg", "relationship": "componentOf", "label": "ing-bad"})",
+      "application/c2pa", archive));
+
+  auto signer = c2pa_test::create_test_signer();
+  auto output_path = get_temp_path("legacy_archive_mismatch_output.jpg");
+  ASSERT_NO_THROW(builder.sign(c2pa_test::get_fixture_path("A.jpg"), output_path, signer));
+
+  // Verify ingredient state is still here
+  auto reader = c2pa::Reader(output_path);
+  auto parsed = json::parse(reader.json());
+  std::string active = parsed["active_manifest"];
+  auto ingredients = parsed["manifests"][active]["ingredients"];
+  ASSERT_EQ(ingredients.size(), 1u);
+
+  EXPECT_TRUE(ingredient_has_mismatch(ingredients[0]))
+      << "ingredient state was lost during the ingredient-archive round-trip";
+}
+
 TEST_F(BuilderTest, ExtractIngredientsFromArchives) {
   auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
 
