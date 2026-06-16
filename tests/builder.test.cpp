@@ -3334,7 +3334,7 @@ TEST_F(BuilderTest, ExtractIngredientsFromArchiveToBuilder) {
   EXPECT_EQ(merged_ingredients.size(), 3) << "Merged builder should have all 3 ingredients from both archives";
 }
 
-// An ingredient's validations tate is carried over with the archive
+// An ingredient's validation state is carried over with the archive
 TEST_F(BuilderTest, IngredientArchivePreservesIngredientValidationState) {
   auto read_bytes = [](const fs::path& p) {
     std::ifstream f(p, std::ios::binary);
@@ -3381,7 +3381,7 @@ TEST_F(BuilderTest, IngredientArchivePreservesIngredientValidationState) {
       << "ingredient state was lost during the ingredient-archive round-trip";
 }
 
-// An ingredient's validations tate is carried over with the archive
+// An ingredient's validation state is carried over with the archive
 TEST_F(BuilderTest, LegacyBuilderArchivePreservesDataHashMismatch) {
   auto read_bytes = [](const fs::path& p) {
     std::ifstream f(p, std::ios::binary);
