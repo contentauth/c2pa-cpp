@@ -3382,7 +3382,7 @@ TEST_F(BuilderTest, IngredientArchivePreservesIngredientValidationState) {
 }
 
 // An ingredient's validation state is carried over with the archive
-TEST_F(BuilderTest, LegacyBuilderArchivePreservesDataHashMismatch) {
+TEST_F(BuilderTest, LegacyIngredientArchivePreservesIngredientValidationState) {
   auto read_bytes = [](const fs::path& p) {
     std::ifstream f(p, std::ios::binary);
     return std::string((std::istreambuf_iterator<char>(f)), {});
