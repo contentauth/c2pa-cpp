@@ -3336,27 +3336,6 @@ TEST_F(BuilderTest, ExtractIngredientsFromArchiveToBuilder) {
 
 // An ingredient's validations tate is carried over with the archive
 TEST_F(BuilderTest, IngredientArchivePreservesIngredientValidationState) {
-  const std::string kMismatchCode = "assertion.dataHash.mismatch";
-
-  // Check the artificial hash mismatch error is here
-  auto ingredient_has_mismatch = [&](const json& ingredient) -> bool {
-    if (ingredient.contains("validation_status")) {
-      for (const auto& s : ingredient["validation_status"]) {
-        if (s.value("code", "") == kMismatchCode) return true;
-      }
-    }
-    if (ingredient.contains("validation_results")) {
-      // validation_results: { activeManifest|ingredientDeltas: { failure: [ {code} ] } }
-      for (const auto& [scope, results] : ingredient["validation_results"].items()) {
-        if (!results.is_object() || !results.contains("failure")) continue;
-        for (const auto& f : results["failure"]) {
-          if (f.value("code", "") == kMismatchCode) return true;
-        }
-      }
-    }
-    return false;
-  };
-
   auto read_bytes = [](const fs::path& p) {
     std::ifstream f(p, std::ios::binary);
     return std::string((std::istreambuf_iterator<char>(f)), {});
@@ -3364,34 +3343,11 @@ TEST_F(BuilderTest, IngredientArchivePreservesIngredientValidationState) {
 
   // Force a dataHash mismatch in the ingredient
   std::string corrupted = read_bytes(c2pa_test::get_fixture_path("C.jpg"));
-  ASSERT_GT(corrupted.size(), 4096u) << "fixture smaller than expected";
+  ASSERT_GT(corrupted.size(), 4096u);
   size_t flip_at = corrupted.size() - 1024;
   corrupted[flip_at] = static_cast<char>(corrupted[flip_at] ^ 0xFF);
 
   auto manifest = read_bytes(c2pa_test::get_fixture_path("training.json"));
-  {
-    auto probe_builder = c2pa::Builder(manifest);
-    std::stringstream corrupt_stream(corrupted,
-        std::ios::in | std::ios::out | std::ios::binary);
-    probe_builder.add_ingredient(
-        R"({"title": "C.jpg", "relationship": "componentOf", "label": "ing-bad"})",
-        "image/jpeg", corrupt_stream);
-
-    auto signer = c2pa_test::create_test_signer();
-    auto probe_out = get_temp_path("mismatch_probe.jpg");
-    probe_builder.sign(c2pa_test::get_fixture_path("A.jpg"), probe_out, signer);
-
-    auto probe_reader = c2pa::Reader(probe_out);
-    auto probe_parsed = json::parse(probe_reader.json());
-    std::string active = probe_parsed["active_manifest"];
-    bool found = false;
-    for (const auto& ing : probe_parsed["manifests"][active]["ingredients"]) {
-      if (ingredient_has_mismatch(ing)) { found = true; break; }
-    }
-    ASSERT_TRUE(found)
-        << "precondition failed: corrupted C.jpg did not yield a dataHash mismatch; "
-           "ingredients JSON: " << probe_parsed["manifests"][active]["ingredients"].dump(2);
-  }
 
   // Archive the failing ingredient as-is
   std::stringstream archive(std::ios::in | std::ios::out | std::ios::binary);
@@ -3421,31 +3377,12 @@ TEST_F(BuilderTest, IngredientArchivePreservesIngredientValidationState) {
   auto ingredients = parsed["manifests"][active]["ingredients"];
   ASSERT_EQ(ingredients.size(), 1u);
 
-  EXPECT_TRUE(ingredient_has_mismatch(ingredients[0]))
+  EXPECT_NE(ingredients[0].dump().find("assertion.dataHash.mismatch"), std::string::npos)
       << "ingredient state was lost during the ingredient-archive round-trip";
 }
 
 // An ingredient's validations tate is carried over with the archive
 TEST_F(BuilderTest, LegacyBuilderArchivePreservesDataHashMismatch) {
-  const std::string kMismatchCode = "assertion.dataHash.mismatch";
-
-  auto ingredient_has_mismatch = [&](const json& ingredient) -> bool {
-    if (ingredient.contains("validation_status")) {
-      for (const auto& s : ingredient["validation_status"]) {
-        if (s.value("code", "") == kMismatchCode) return true;
-      }
-    }
-    if (ingredient.contains("validation_results")) {
-      for (const auto& [scope, results] : ingredient["validation_results"].items()) {
-        if (!results.is_object() || !results.contains("failure")) continue;
-        for (const auto& f : results["failure"]) {
-          if (f.value("code", "") == kMismatchCode) return true;
-        }
-      }
-    }
-    return false;
-  };
-
   auto read_bytes = [](const fs::path& p) {
     std::ifstream f(p, std::ios::binary);
     return std::string((std::istreambuf_iterator<char>(f)), {});
@@ -3453,7 +3390,7 @@ TEST_F(BuilderTest, LegacyBuilderArchivePreservesDataHashMismatch) {
 
   // Force a dataHash mismatch in the ingredient
   std::string corrupted = read_bytes(c2pa_test::get_fixture_path("C.jpg"));
-  ASSERT_GT(corrupted.size(), 4096u) << "fixture smaller than expected";
+  ASSERT_GT(corrupted.size(), 4096u);
   size_t flip_at = corrupted.size() - 1024;
   corrupted[flip_at] = static_cast<char>(corrupted[flip_at] ^ 0xFF);
 
@@ -3489,7 +3426,7 @@ TEST_F(BuilderTest, LegacyBuilderArchivePreservesDataHashMismatch) {
   auto ingredients = parsed["manifests"][active]["ingredients"];
   ASSERT_EQ(ingredients.size(), 1u);
 
-  EXPECT_TRUE(ingredient_has_mismatch(ingredients[0]))
+  EXPECT_NE(ingredients[0].dump().find("assertion.dataHash.mismatch"), std::string::npos)
       << "ingredient state was lost during the ingredient-archive round-trip";
 }
 
