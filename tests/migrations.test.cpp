@@ -57,6 +57,10 @@ protected:
 //   optional when the asset had no C2PA manifest.
 // Current API: Reader::from_asset(ctx, format, stream) returns std::optional<Reader>
 //   (std::nullopt when no manifest), then Reader::json() yields the manifest store.
+// Context use: the old functions took no context and ran on thread-local
+//   default settings. The current APIs take an explicit Context. We pass a
+//   shared_ptr<Context>, so the shared_ptr keeps the context alive for the
+//   Reader/Builder that holds it.
 TEST_F(LegacyApiMigrationTest, ReadFile_NoManifest_ReturnsEmptyOptional) {
     auto test_file = c2pa_test::get_fixture_path("A.jpg");  // A.jpg has no manifest
     std::ifstream stream(test_file, std::ios::binary);
@@ -70,8 +74,13 @@ TEST_F(LegacyApiMigrationTest, ReadFile_NoManifest_ReturnsEmptyOptional) {
 
 // Legacy API:  c2pa::read_file(source_path) for an asset that has a manifest.
 // What it did: returned the manifest-store JSON (with "manifests" and
-//   "active_manifest" keys).
-// Current API: Reader::from_asset(...).value().json().
+//   "active_manifest" keys); the format was derived from the path internally.
+// Current API: the path overload Reader::from_asset(ctx, source_path) is an
+//   equivalent. It opens the file and infers the format from the extension,
+//   like the old path-based read_file.
+//   With a stream there is no path to infer from, so the caller owns
+//   format detection and must pass the MIME type, which happenes when
+//   the stream overload, Reader::from_asset(ctx, format, stream), is used).
 class ReadFileWithManifestMigrationTest
     : public ::testing::TestWithParam<std::string> {};
 
@@ -85,20 +94,9 @@ INSTANTIATE_TEST_SUITE_P(ReadFileWithManifestMigrationTest,
 TEST_P(ReadFileWithManifestMigrationTest, ReadFile_WithManifest_ReturnsManifestJson) {
     auto filename = GetParam();
     auto test_file = c2pa_test::get_fixture_path(filename);
-    std::ifstream stream(test_file, std::ios::binary);
-    ASSERT_TRUE(stream.is_open());
-
-    // Format is derived from the extension by the caller; map the few we use.
-    std::string format = "image/jpeg";
-    if (filename.size() >= 4) {
-        auto ext = filename.substr(filename.size() - 4);
-        if (ext == ".mp4") format = "video/mp4";
-        else if (ext == ".dng") format = "image/x-adobe-dng";
-        else if (ext == ".wav") format = "audio/wav";
-    }
 
     auto context = std::make_shared<c2pa::Context>();
-    auto reader = c2pa::Reader::from_asset(context, format, stream);
+    auto reader = c2pa::Reader::from_asset(context, test_file);
     ASSERT_TRUE(reader.has_value());
 
     auto parsed = json::parse(reader->json());
@@ -122,6 +120,7 @@ TEST_F(LegacyApiMigrationTest, ReadFile_WithDataDir_ExtractResources) {
     ASSERT_TRUE(stream.is_open());
 
     auto context = std::make_shared<c2pa::Context>();
+    // Stream overload: no path to infer from, so the caller supplies the MIME type.
     auto reader = c2pa::Reader::from_asset(context, "image/jpeg", stream);
     ASSERT_TRUE(reader.has_value());
 
