@@ -744,6 +744,8 @@ namespace c2pa
         C2paReader *c2pa_reader;
         std::unique_ptr<std::ifstream> owned_stream;       // Owns file stream when created from path
         std::unique_ptr<CppIStream> cpp_stream;            // Wraps stream for C API; destroyed before owned_stream
+        std::unique_ptr<CppIStream> fragment_main_stream;  // Main/init stream wrapper for with_fragment()
+        std::unique_ptr<CppIStream> fragment_stream;       // Fragment stream wrapper for with_fragment()
         std::shared_ptr<IContextProvider> context_ref;
 
         void init_from_context(IContextProvider& context, const std::string &format, std::istream &stream);
@@ -882,6 +884,8 @@ namespace c2pa
             : c2pa_reader(std::exchange(other.c2pa_reader, nullptr)),
               owned_stream(std::move(other.owned_stream)),
               cpp_stream(std::move(other.cpp_stream)),
+              fragment_main_stream(std::move(other.fragment_main_stream)),
+              fragment_stream(std::move(other.fragment_stream)),
               context_ref(std::move(other.context_ref)) {
         }
 
@@ -891,6 +895,8 @@ namespace c2pa
                 c2pa_reader = std::exchange(other.c2pa_reader, nullptr);
                 owned_stream = std::move(other.owned_stream);
                 cpp_stream = std::move(other.cpp_stream);
+                fragment_main_stream = std::move(other.fragment_main_stream);
+                fragment_stream = std::move(other.fragment_stream);
                 context_ref = std::move(other.context_ref);
             }
             return *this;
@@ -910,6 +916,26 @@ namespace c2pa
         /// @return Optional string containing the remote URL, or std::nullopt if manifest was embedded.
         /// @throws C2paException for errors encountered by the C2PA library.
         [[nodiscard]] std::optional<std::string> remote_url() const;
+
+        /// @brief Process a BMFF fragment stream with this Reader instance.
+        /// @details Used for fragmented BMFF media (DASH/HLS streaming) where content is split
+        ///          into an init/main segment and separate fragment files. The Reader is
+        ///          created from the init segment (e.g. Reader(context, "video/mp4", init)),
+        ///          then goes through one fragment at a time via this method.
+        ///          The underlying native SDK consumes the current reader and
+        ///          returns a new one configured with the fragment.
+        ///          This method swaps the handle in place and returns *this for chaining
+        ///          across fragments as the reading steps go through fragments.
+        /// @param format MIME type of the media (e.g., "video/mp4").
+        /// @param stream The main/init segment.
+        /// @param fragment The current fragment to process.
+        /// @return *this, for chaining across multiple fragments.
+        /// @note @p stream and @p fragment need only remain valid for the duration of this call.
+        ///       The Reader does not retain a reference to either after returning.
+        /// @throws C2paException if the C2PA library reports an error.
+        ///         On failure the underlying reader handle is consumed and
+        ///         this Reader must not be used further.
+        Reader& with_fragment(const std::string& format, std::istream& stream, std::istream& fragment);
 
         /// @brief Get the manifest as a JSON string.
         /// @return The manifest as a JSON string.

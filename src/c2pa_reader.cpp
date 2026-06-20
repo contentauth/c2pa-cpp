@@ -177,6 +177,33 @@ namespace c2pa
         context_ref = std::move(context);
     }
 
+    Reader& Reader::with_fragment(const std::string& format, std::istream& stream, std::istream& fragment)
+    {
+        if (c2pa_reader == nullptr) {
+            throw C2paException("Reader is not initialized");
+        }
+
+        // Wrap both streams before the FFI call:
+        // keep them alive as members for RAII symmetry (released by destructor).
+        fragment_main_stream = std::make_unique<CppIStream>(stream);
+        fragment_stream = std::make_unique<CppIStream>(fragment);
+
+        // c2pa_reader_with_fragment consumes the existing reader and returns a new one.
+        // *this is returned for chaining so reading can go through all segments.
+        C2paReader* updated = c2pa_reader_with_fragment(
+            c2pa_reader,
+            format.c_str(),
+            fragment_main_stream->c_stream,
+            fragment_stream->c_stream);
+        c2pa_reader = nullptr;
+        if (updated == nullptr) {
+            throw C2paException();
+        }
+        c2pa_reader = updated;
+
+        return *this;
+    }
+
     Reader::Reader(const std::string &format, std::istream &stream)
     {
         cpp_stream = std::make_unique<CppIStream>(stream);

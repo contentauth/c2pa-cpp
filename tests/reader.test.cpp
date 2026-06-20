@@ -738,6 +738,39 @@ TEST(Reader, StreamWithExceptions) {
     }
 }
 
+TEST_F(ReaderTest, ReaderFromFragmentDashFixtures) {
+    auto ctx = std::make_shared<c2pa::Context>();
+
+    std::ifstream init(c2pa_test::get_fixture_path("dashinit.mp4"), std::ios::binary);
+    ASSERT_TRUE(init.is_open());
+    c2pa::Reader reader(ctx, "video/mp4", init);
+
+    std::ifstream main_seg(c2pa_test::get_fixture_path("dashinit.mp4"), std::ios::binary);
+    std::ifstream fragment(c2pa_test::get_fixture_path("dash1.m4s"), std::ios::binary);
+    ASSERT_TRUE(main_seg.is_open());
+    ASSERT_TRUE(fragment.is_open());
+
+    auto& same = reader.with_fragment("video/mp4", main_seg, fragment);
+    EXPECT_EQ(&same, &reader);
+    EXPECT_FALSE(reader.json().empty());
+}
+
+TEST_F(ReaderTest, ReaderFromFragmentReaderCanMove) {
+    auto ctx = std::make_shared<c2pa::Context>();
+    std::ifstream init(c2pa_test::get_fixture_path("dashinit.mp4"), std::ios::binary);
+    ASSERT_TRUE(init.is_open());
+    c2pa::Reader reader(ctx, "video/mp4", init);
+
+    {
+        std::ifstream main_seg(c2pa_test::get_fixture_path("dashinit.mp4"), std::ios::binary);
+        std::ifstream fragment(c2pa_test::get_fixture_path("dash1.m4s"), std::ios::binary);
+        reader.with_fragment("video/mp4", main_seg, fragment);
+    }
+
+    c2pa::Reader moved = std::move(reader);
+    EXPECT_FALSE(moved.json().empty());
+}
+
 class ReaderSidecarTest : public ReaderTest {
 public:
     // A sidecar manifest plus the asset bytes it is bound to.
