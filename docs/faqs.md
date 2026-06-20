@@ -113,3 +113,13 @@ builder.sign(source, output, signer);
 ## What happens to the provenance chain when rebuilding a working store?
 
 When creating a new manifest, the chain is preserved once the original asset is added as an ingredient. The ingredient carries the original asset's manifest data, so validators can trace the full history. If the original is not added as an ingredient, the provenance chain is broken: the new manifest has no link to the original. This might be intentional (starting fresh) or a mistake (losing provenance).
+
+### What replaced `read_file`, `read_ingredient_file`, and `sign_file`?
+
+These file-based functions not attached to an API-exposed object, `read_file`, `read_ingredient_file`, and `sign_file`, were deprecated, then removed. Each legacy function maps to another implementation path using existing APIs on the `Reader` or `Builder` objects:
+
+| Removed function | Equivalent |
+| --- | --- |
+| `read_file(path)` | `Reader::from_asset(ctx, format, stream)` then `Reader::json()`. Pull binary resources with `Reader::get_resource(uri, dest)`. |
+| `read_ingredient_file(path, data_dir)` | `Builder::add_ingredient(ingredient_json, source_path)`, which adds ingredients to the active Builder. To recover the formed ingredient JSON (if needed) and its resources, archive the working store and read it back, or move the ingredient with the dedicated `write_ingredient_archive` / `add_ingredient_from_archive` APIs. See [Extracting ingredients from a working store](selective-manifests.md#extracting-ingredients-from-a-working-store). |
+| `sign_file(src, dst, manifest, SignerInfo*, data_dir)` | `Builder::sign(source_path, dest_path, signer)` with a `Signer`. |
