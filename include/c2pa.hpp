@@ -809,8 +809,9 @@ namespace c2pa
         /// @param format MIME type of the image stream (e.g., "image/jpeg").
         /// @param image_stream Asset data. Must support seeking (used for exclusion-range hashing).
         /// @param manifest_jumbf Raw JUMBF manifest bytes (e.g., contents of a .c2pa sidecar file).
-        /// @throws C2paException if context->is_valid() is false, manifest_jumbf is empty,
-        ///         or the C2PA library reports an error (parse failure, hash mismatch, etc.).
+        /// @throws C2paException if context is null,
+        ///         context->is_valid() is false,
+        ///         manifest_jumbf is empty, or the C2PA library reports an error.
         Reader(std::shared_ptr<IContextProvider> context,
                const std::string& format,
                std::istream& image_stream,

@@ -147,6 +147,9 @@ namespace c2pa
     Reader::Reader(std::shared_ptr<IContextProvider> context, const std::string &format, std::istream &stream)
         : c2pa_reader(nullptr)
     {
+        if (!context) {
+            throw C2paException("context must not be null");
+        }
         init_from_context(*context, format, stream);
         context_ref = std::move(context);
     }
@@ -154,6 +157,9 @@ namespace c2pa
     Reader::Reader(std::shared_ptr<IContextProvider> context, const std::filesystem::path &source_path)
         : c2pa_reader(nullptr)
     {
+        if (!context) {
+            throw C2paException("context must not be null");
+        }
         init_from_context(*context, source_path);
         context_ref = std::move(context);
     }
@@ -164,6 +170,9 @@ namespace c2pa
                    const std::vector<uint8_t>& manifest_jumbf)
         : c2pa_reader(nullptr)
     {
+        if (!context) {
+            throw C2paException("context must not be null");
+        }
         init_from_manifest_data_and_stream(*context, format, image_stream, manifest_jumbf);
         context_ref = std::move(context);
     }

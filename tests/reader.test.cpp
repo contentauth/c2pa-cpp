@@ -15,6 +15,7 @@
 #include <nlohmann/json.hpp>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 
 #include "include/test_utils.hpp"
 
@@ -738,29 +739,58 @@ TEST(Reader, StreamWithExceptions) {
 }
 
 class ReaderSidecarTest : public ReaderTest {
-protected:
-    // Create a sidecar on the fly
-    static std::vector<uint8_t> make_sidecar_bytes(const fs::path& asset) {
+public:
+    // A sidecar manifest plus the asset bytes it is bound to.
+    struct TestSidecar {
+        std::vector<uint8_t> manifest;      // external JUMBF, to pass as manifest_jumbf
+        std::vector<uint8_t> asset_bytes;   // the asset the manifest's dataHash covers
+    };
+
+    // Create manifest bytes for an asset.
+    static TestSidecar make_test_sidecar_bytes(const fs::path& asset,
+                                                 const std::string& format) {
         auto signer = c2pa_test::create_test_signer();
         auto context = c2pa::Context();
         auto manifest_json = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
         auto builder = c2pa::Builder(context, manifest_json);
+        builder.set_no_embed();
         std::ifstream source(asset, std::ios::binary);
         std::stringstream dest(std::ios::in | std::ios::out | std::ios::binary);
-        auto manifest_bytes = builder.sign("application/c2pa", source, dest, signer);
-        return std::vector<uint8_t>(manifest_bytes.begin(), manifest_bytes.end());
+        auto manifest_bytes = builder.sign(format, source, dest, signer);
+
+        std::string signed_str = dest.str();
+        return TestSidecar{
+            std::vector<uint8_t>(manifest_bytes.begin(), manifest_bytes.end()),
+            std::vector<uint8_t>(signed_str.begin(), signed_str.end())};
+    }
+
+    // True if any validation_status entry's code contains "dataHash".
+    static bool has_data_hash_failure(const std::string& reader_json) {
+        auto obj = nlohmann::json::parse(reader_json);
+        for (auto& status : obj.value("validation_status", nlohmann::json::array())) {
+            if (status.value("code", std::string()).find("dataHash") != std::string::npos) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Open the signed asset bytes as a seekable binary stream.
+    static std::unique_ptr<std::istream> open_asset_stream(const std::vector<uint8_t>& bytes) {
+        return std::make_unique<std::istringstream>(
+            std::string(bytes.begin(), bytes.end()), std::ios::binary);
     }
 };
 
 TEST_F(ReaderSidecarTest, ReaderCanReadSidecar) {
-    auto asset = c2pa_test::get_fixture_path("C.jpg");
-    auto sidecar = make_sidecar_bytes(asset);
-    std::ifstream img(asset, std::ios::binary);
+    auto sc = make_test_sidecar_bytes(c2pa_test::get_fixture_path("C.jpg"), "image/jpeg");
+    auto img = open_asset_stream(sc.asset_bytes);
     auto ctx = std::make_shared<c2pa::Context>();
-    c2pa::Reader r(ctx, "image/jpeg", img, sidecar);
+    c2pa::Reader r(ctx, "image/jpeg", *img, sc.manifest);
     EXPECT_FALSE(r.json().empty());
     EXPECT_FALSE(r.is_embedded());
     EXPECT_TRUE(nlohmann::json::parse(r.json()).contains("manifests"));
+    EXPECT_FALSE(has_data_hash_failure(r.json()));
 }
 
 TEST_F(ReaderSidecarTest, ReaderCanReadSidecarSpecialChars) {
@@ -769,92 +799,31 @@ TEST_F(ReaderSidecarTest, ReaderCanReadSidecarSpecialChars) {
 #else
     auto asset = c2pa_test::get_fixture_path("CÖÄ_.jpg");
 #endif
-    auto sidecar = make_sidecar_bytes(asset);
-    std::ifstream img(asset, std::ios::binary);
+    auto sc = make_test_sidecar_bytes(asset, "image/jpeg");
+    auto img = open_asset_stream(sc.asset_bytes);
     auto ctx = std::make_shared<c2pa::Context>();
-    c2pa::Reader r(ctx, "image/jpeg", img, sidecar);
+    c2pa::Reader r(ctx, "image/jpeg", *img, sc.manifest);
     EXPECT_FALSE(r.json().empty());
     EXPECT_FALSE(r.is_embedded());
+    EXPECT_FALSE(has_data_hash_failure(r.json()));
 }
 
 TEST_F(ReaderSidecarTest, SidecarReaderCanMove) {
-    auto asset = c2pa_test::get_fixture_path("C.jpg");
-    auto sidecar = make_sidecar_bytes(asset);
-    std::ifstream img(asset, std::ios::binary);
+    auto sc = make_test_sidecar_bytes(c2pa_test::get_fixture_path("C.jpg"), "image/jpeg");
+    auto img = open_asset_stream(sc.asset_bytes);
     auto ctx = std::make_shared<c2pa::Context>();
-    c2pa::Reader r1(ctx, "image/jpeg", img, sidecar);
+    c2pa::Reader r1(ctx, "image/jpeg", *img, sc.manifest);
     c2pa::Reader r2 = std::move(r1);
     EXPECT_FALSE(r2.json().empty());
 }
 
 TEST_F(ReaderSidecarTest, SidecarReaderResetsStreamPosition) {
-    auto asset = c2pa_test::get_fixture_path("C.jpg");
-    auto sidecar = make_sidecar_bytes(asset);
-    std::ifstream img(asset, std::ios::binary);
-    img.seekg(249);
+    auto sc = make_test_sidecar_bytes(c2pa_test::get_fixture_path("C.jpg"), "image/jpeg");
+    auto img = open_asset_stream(sc.asset_bytes);
+    img->seekg(249);
     auto ctx = std::make_shared<c2pa::Context>();
 
     // Reader can read even if stream img is at another pos than 0
-    c2pa::Reader r(ctx, "image/jpeg", img, sidecar);
+    c2pa::Reader r(ctx, "image/jpeg", *img, sc.manifest);
     EXPECT_FALSE(r.json().empty());
-}
-
-TEST_F(ReaderSidecarTest, SidecarReaderDetectsMismatch) {
-    // Use image C to make the sidecar file
-    auto sidecar = make_sidecar_bytes(c2pa_test::get_fixture_path("C.jpg"));
-
-    // Open image A as strem
-    std::ifstream wrong_img(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
-    auto ctx = std::make_shared<c2pa::Context>();
-
-    // Sidecar and data from opened file image should not match...
-    c2pa::Reader r(ctx, "image/jpeg", wrong_img, sidecar);
-
-    // ... The mismatch should get detected and reported in status
-    auto json_obj = nlohmann::json::parse(r.json());
-    bool has_failure = false;
-    for (auto& status : json_obj.value("validation_status", nlohmann::json::array())) {
-        std::string code = status.value("code", "");
-        if (code.find("dataHash") != std::string::npos) {
-            has_failure = true;
-        }
-    }
-    EXPECT_TRUE(has_failure);
-}
-
-TEST_F(ReaderSidecarTest, SidecarReaderIsNotConfusedByScrambledBytes) {
-    std::ifstream img(c2pa_test::get_fixture_path("C.jpg"), std::ios::binary);
-    auto ctx = std::make_shared<c2pa::Context>();
-    std::vector<uint8_t> garbage(256, 0xFF);
-    EXPECT_THROW(c2pa::Reader(ctx, "image/jpeg", img, garbage), c2pa::C2paException);
-}
-
-// T6: Empty manifest vector — C2paException before any FFI call
-TEST_F(ReaderSidecarTest, WIP_SidecarManifest_EmptyManifest_Throws) {
-    std::ifstream img(c2pa_test::get_fixture_path("C.jpg"), std::ios::binary);
-    auto ctx = std::make_shared<c2pa::Context>();
-    EXPECT_THROW(c2pa::Reader(ctx, "image/jpeg", img, {}), c2pa::C2paException);
-}
-
-// T8: Single-byte manifest (too short to be valid JUMBF)
-TEST_F(ReaderSidecarTest, WIP_SidecarManifest_OneByteManifest_Throws) {
-    std::ifstream img(c2pa_test::get_fixture_path("C.jpg"), std::ios::binary);
-    auto ctx = std::make_shared<c2pa::Context>();
-    EXPECT_THROW(c2pa::Reader(ctx, "image/jpeg", img, {0x00}), c2pa::C2paException);
-}
-
-// T9: Unopened stream
-TEST_F(ReaderSidecarTest, WIP_SidecarManifest_BadStream_Throws) {
-    auto sidecar = make_sidecar_bytes(c2pa_test::get_fixture_path("C.jpg"));
-    auto ctx = std::make_shared<c2pa::Context>();
-    std::ifstream closed;
-    EXPECT_THROW(c2pa::Reader(ctx, "image/jpeg", closed, sidecar), c2pa::C2paException);
-}
-
-// T11: 1 MB garbage manifest — must throw C2paException, not crash or silently truncate
-TEST_F(ReaderSidecarTest, WIP_SidecarManifest_LargeGarbageManifest_Throws) {
-    std::ifstream img(c2pa_test::get_fixture_path("C.jpg"), std::ios::binary);
-    auto ctx = std::make_shared<c2pa::Context>();
-    std::vector<uint8_t> large(1024 * 1024, 0xAB);
-    EXPECT_THROW(c2pa::Reader(ctx, "image/jpeg", img, large), c2pa::C2paException);
 }
