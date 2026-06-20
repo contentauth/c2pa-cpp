@@ -179,9 +179,7 @@ namespace c2pa
 
     Reader& Reader::with_fragment(const std::string& format, std::istream& stream, std::istream& fragment)
     {
-        if (c2pa_reader == nullptr) {
-            throw C2paException("Reader is not initialized");
-        }
+        ensure_initialized();
 
         // Wrap both streams before the FFI call:
         // keep them alive as members for RAII symmetry (released by destructor).
@@ -241,16 +239,19 @@ namespace c2pa
 
     std::string Reader::json() const
     {
+        ensure_initialized();
         return detail::c_string_to_string(c2pa_reader_json(c2pa_reader));
     }
 
     std::string Reader::detailed_json() const
     {
+        ensure_initialized();
         return detail::c_string_to_string(c2pa_reader_detailed_json(c2pa_reader));
     }
 
     std::string Reader::crjson() const
     {
+        ensure_initialized();
         return detail::c_string_to_string(c2pa_reader_crjson(c2pa_reader));
     }
 

@@ -754,6 +754,14 @@ namespace c2pa
                                                  const std::string& format,
                                                  std::istream& image_stream,
                                                  const std::vector<uint8_t>& manifest_jumbf);
+
+        /// @brief Throw if the Reader holds no valid native handle.
+        void ensure_initialized() const {
+            if (c2pa_reader == nullptr) {
+                throw C2paException("Reader is not initialized");
+            }
+        }
+
         Reader() : c2pa_reader(nullptr) {}
 
     public:
@@ -906,8 +914,11 @@ namespace c2pa
 
         /// @brief Check if the reader was created from an embedded manifest.
         /// @return true if the manifest was embedded in the asset, false if external.
-        /// @throws C2paException for errors encountered by the C2PA library.
+        /// @throws C2paException if the Reader holds no valid handle (e.g. it was moved
+        ///         from, or a prior with_fragment() failed and consumed it), or for other
+        ///         errors encountered by the C2PA library.
         [[nodiscard]] inline bool is_embedded() const {
+            ensure_initialized();
             return c2pa_reader_is_embedded(c2pa_reader);
         }
 
