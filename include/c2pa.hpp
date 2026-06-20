@@ -809,6 +809,8 @@ namespace c2pa
         /// @param format MIME type of the image stream (e.g., "image/jpeg").
         /// @param image_stream Asset data. Must support seeking (used for exclusion-range hashing).
         /// @param manifest_jumbf Raw JUMBF manifest bytes (e.g., contents of a .c2pa sidecar file).
+        /// @note @p image_stream, @p manifest_jumbf, and @p format need only remain valid for the
+        ///       duration of the construction call. The Reader does not retain their references.
         /// @throws C2paException if context is null,
         ///         context->is_valid() is false,
         ///         manifest_jumbf is empty, or the C2PA library reports an error.
