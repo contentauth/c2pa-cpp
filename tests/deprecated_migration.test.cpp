@@ -155,12 +155,18 @@ TEST_F(LegacyApiMigrationTest, ReadFile_WithDataDir_ExtractResources) {
 //   as closely as possible using the read-filter-rebuild pattern: add the
 //   ingredient, archive the working store, read the archive back, and pull the
 //   ingredient JSON + thumbnail. Two differences worth noting:
-//     - read_ingredient_file derived "title" from the file name. add_ingredient
-//       only sets "title" if the caller supplies it in the ingredient JSON, so we
-//       pass it explicitly to reproduce the old output.
-//     - "format" comes back as the short extension ("jpg") rather than the MIME
-//       type the old return value used; the assertion checks presence, not value.
-//   Remaining identifiers are generated, so value assertions stay behavioral.
+//     - read_ingredient_file derived "title" from the file name (it read a path
+//       and ran extension_to_mime/title logic). add_ingredient only sets "title"
+//       if the caller supplies it in the ingredient JSON, so we pass it
+//       explicitly to reproduce the old output.
+//     - The old top-level "format" was the MIME type "image/jpeg" (read_ingredient_file
+//       went through extension_to_mime). The current working-store ingredient stores
+//       the short extension "jpg" at top level, but the MIME type is still present on
+//       the thumbnail ("image/jpeg"). The old test only did a substring search for
+//       "image/jpeg" over the whole ingredient JSON, which still matches today via
+//       the thumbnail. We assert both the new top-level "jpg" and the thumbnail MIME
+//       so the difference is explicit rather than hidden behind a substring match.
+//   Generated identifiers (instance_id, the thumbnail JUMBF URI) are not pinned.
 TEST_F(LegacyApiMigrationTest, ReadIngredientFile_ReconstructIngredientJsonAndResources) {
     auto context = std::make_shared<c2pa::Context>();
     auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
@@ -185,12 +191,16 @@ TEST_F(LegacyApiMigrationTest, ReadIngredientFile_ReconstructIngredientJsonAndRe
         ASSERT_EQ(ingredients.size(), 1u);
 
         // The reconstructed ingredient carries the same fields the old
-        // read_ingredient_file return value did.
+        // read_ingredient_file return value did (title, format, thumbnail,
+        // relationship).
         auto ingredient = ingredients[0];
         EXPECT_EQ(ingredient["title"], "A.jpg");
-        EXPECT_TRUE(ingredient.contains("format"));
         EXPECT_EQ(ingredient["relationship"], "componentOf");
+        // Top-level format is the short extension now, the old MIME "image/jpeg"
+        // still appears on the thumbnail.
+        EXPECT_EQ(ingredient["format"], "jpg");
         ASSERT_TRUE(ingredient.contains("thumbnail"));
+        EXPECT_EQ(ingredient["thumbnail"]["format"], "image/jpeg");
         ASSERT_TRUE(ingredient["thumbnail"].contains("identifier"));
 
         // The data_dir side effect, now caller-driven: pull the thumbnail resource.
@@ -228,7 +238,8 @@ TEST_F(LegacyApiMigrationTest, ReadIngredientFile_ReconstructIngredientJsonAndRe
         // Provenance markers present because C.jpg has a manifest store. These are
         // the extra fields the old ReadIngredientFileWhoHasAManifestStore checked.
         EXPECT_TRUE(ingredient.contains("active_manifest"));
-        EXPECT_TRUE(ingredient.contains("manifest_data"));
+        ASSERT_TRUE(ingredient.contains("manifest_data"));
+        EXPECT_EQ(ingredient["manifest_data"]["format"], "application/c2pa");
         EXPECT_TRUE(ingredient.contains("validation_results"));
     }
 }
