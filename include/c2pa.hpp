@@ -748,6 +748,10 @@ namespace c2pa
 
         void init_from_context(IContextProvider& context, const std::string &format, std::istream &stream);
         void init_from_context(IContextProvider& context, const std::filesystem::path &source_path);
+        void init_from_manifest_data_and_stream(IContextProvider& context,
+                                                 const std::string& format,
+                                                 std::istream& image_stream,
+                                                 const std::vector<uint8_t>& manifest_jumbf);
         Reader() : c2pa_reader(nullptr) {}
 
     public:
@@ -795,6 +799,22 @@ namespace c2pa
         /// @param source_path The path to the file to read.
         /// @throws C2paException if context is null or context->is_valid() returns false.
         Reader(std::shared_ptr<IContextProvider> context, const std::filesystem::path &source_path);
+
+        /// @brief Create a Reader from a shared context, image stream, and external JUMBF manifest.
+        /// @details Performs full C2PA binding verification between @p image_stream and the provided
+        ///          JUMBF manifest bytes without requiring the manifest to be embedded in the asset.
+        ///          Typical use: sidecar .c2pa files, database-stored manifests, in-memory pipelines.
+        ///          The Reader retains a shared reference to the context for its lifetime.
+        /// @param context Shared context provider (trust anchors, verification policy).
+        /// @param format MIME type of the image stream (e.g., "image/jpeg").
+        /// @param image_stream Asset data. Must support seeking (used for exclusion-range hashing).
+        /// @param manifest_jumbf Raw JUMBF manifest bytes (e.g., contents of a .c2pa sidecar file).
+        /// @throws C2paException if context->is_valid() is false, manifest_jumbf is empty,
+        ///         or the C2PA library reports an error (parse failure, hash mismatch, etc.).
+        Reader(std::shared_ptr<IContextProvider> context,
+               const std::string& format,
+               std::istream& image_stream,
+               const std::vector<uint8_t>& manifest_jumbf);
 
         /// @brief Create a Reader from a stream (will use global settings if any loaded).
         /// @details The validation_status field in the JSON contains validation results.

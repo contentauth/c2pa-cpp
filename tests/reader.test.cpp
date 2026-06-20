@@ -736,3 +736,125 @@ TEST(Reader, StreamWithExceptions) {
         // An error result is acceptable; crossing the FFI with an exception is not.
     }
 }
+
+class ReaderSidecarTest : public ReaderTest {
+protected:
+    // Create a sidecar on the fly
+    static std::vector<uint8_t> make_sidecar_bytes(const fs::path& asset) {
+        auto signer = c2pa_test::create_test_signer();
+        auto context = c2pa::Context();
+        auto manifest_json = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+        auto builder = c2pa::Builder(context, manifest_json);
+        std::ifstream source(asset, std::ios::binary);
+        std::stringstream dest(std::ios::in | std::ios::out | std::ios::binary);
+        auto manifest_bytes = builder.sign("application/c2pa", source, dest, signer);
+        return std::vector<uint8_t>(manifest_bytes.begin(), manifest_bytes.end());
+    }
+};
+
+TEST_F(ReaderSidecarTest, ReaderCanReadSidecar) {
+    auto asset = c2pa_test::get_fixture_path("C.jpg");
+    auto sidecar = make_sidecar_bytes(asset);
+    std::ifstream img(asset, std::ios::binary);
+    auto ctx = std::make_shared<c2pa::Context>();
+    c2pa::Reader r(ctx, "image/jpeg", img, sidecar);
+    EXPECT_FALSE(r.json().empty());
+    EXPECT_FALSE(r.is_embedded());
+    EXPECT_TRUE(nlohmann::json::parse(r.json()).contains("manifests"));
+}
+
+TEST_F(ReaderSidecarTest, ReaderCanReadSidecarSpecialChars) {
+#ifdef _WIN32
+    auto asset = c2pa_test::get_fixture_path(L"CÖÄ_.jpg");
+#else
+    auto asset = c2pa_test::get_fixture_path("CÖÄ_.jpg");
+#endif
+    auto sidecar = make_sidecar_bytes(asset);
+    std::ifstream img(asset, std::ios::binary);
+    auto ctx = std::make_shared<c2pa::Context>();
+    c2pa::Reader r(ctx, "image/jpeg", img, sidecar);
+    EXPECT_FALSE(r.json().empty());
+    EXPECT_FALSE(r.is_embedded());
+}
+
+TEST_F(ReaderSidecarTest, SidecarReaderCanMove) {
+    auto asset = c2pa_test::get_fixture_path("C.jpg");
+    auto sidecar = make_sidecar_bytes(asset);
+    std::ifstream img(asset, std::ios::binary);
+    auto ctx = std::make_shared<c2pa::Context>();
+    c2pa::Reader r1(ctx, "image/jpeg", img, sidecar);
+    c2pa::Reader r2 = std::move(r1);
+    EXPECT_FALSE(r2.json().empty());
+}
+
+TEST_F(ReaderSidecarTest, SidecarReaderResetsStreamPosition) {
+    auto asset = c2pa_test::get_fixture_path("C.jpg");
+    auto sidecar = make_sidecar_bytes(asset);
+    std::ifstream img(asset, std::ios::binary);
+    img.seekg(249);
+    auto ctx = std::make_shared<c2pa::Context>();
+
+    // Reader can read even if stream img is at another pos than 0
+    c2pa::Reader r(ctx, "image/jpeg", img, sidecar);
+    EXPECT_FALSE(r.json().empty());
+}
+
+TEST_F(ReaderSidecarTest, SidecarReaderDetectsMismatch) {
+    // Use image C to make the sidecar file
+    auto sidecar = make_sidecar_bytes(c2pa_test::get_fixture_path("C.jpg"));
+
+    // Open image A as strem
+    std::ifstream wrong_img(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+    auto ctx = std::make_shared<c2pa::Context>();
+
+    // Sidecar and data from opened file image should not match...
+    c2pa::Reader r(ctx, "image/jpeg", wrong_img, sidecar);
+
+    // ... The mismatch should get detected and reported in status
+    auto json_obj = nlohmann::json::parse(r.json());
+    bool has_failure = false;
+    for (auto& status : json_obj.value("validation_status", nlohmann::json::array())) {
+        std::string code = status.value("code", "");
+        if (code.find("dataHash") != std::string::npos) {
+            has_failure = true;
+        }
+    }
+    EXPECT_TRUE(has_failure);
+}
+
+TEST_F(ReaderSidecarTest, SidecarReaderIsNotConfusedByScrambledBytes) {
+    std::ifstream img(c2pa_test::get_fixture_path("C.jpg"), std::ios::binary);
+    auto ctx = std::make_shared<c2pa::Context>();
+    std::vector<uint8_t> garbage(256, 0xFF);
+    EXPECT_THROW(c2pa::Reader(ctx, "image/jpeg", img, garbage), c2pa::C2paException);
+}
+
+// T6: Empty manifest vector — C2paException before any FFI call
+TEST_F(ReaderSidecarTest, WIP_SidecarManifest_EmptyManifest_Throws) {
+    std::ifstream img(c2pa_test::get_fixture_path("C.jpg"), std::ios::binary);
+    auto ctx = std::make_shared<c2pa::Context>();
+    EXPECT_THROW(c2pa::Reader(ctx, "image/jpeg", img, {}), c2pa::C2paException);
+}
+
+// T8: Single-byte manifest (too short to be valid JUMBF)
+TEST_F(ReaderSidecarTest, WIP_SidecarManifest_OneByteManifest_Throws) {
+    std::ifstream img(c2pa_test::get_fixture_path("C.jpg"), std::ios::binary);
+    auto ctx = std::make_shared<c2pa::Context>();
+    EXPECT_THROW(c2pa::Reader(ctx, "image/jpeg", img, {0x00}), c2pa::C2paException);
+}
+
+// T9: Unopened stream
+TEST_F(ReaderSidecarTest, WIP_SidecarManifest_BadStream_Throws) {
+    auto sidecar = make_sidecar_bytes(c2pa_test::get_fixture_path("C.jpg"));
+    auto ctx = std::make_shared<c2pa::Context>();
+    std::ifstream closed;
+    EXPECT_THROW(c2pa::Reader(ctx, "image/jpeg", closed, sidecar), c2pa::C2paException);
+}
+
+// T11: 1 MB garbage manifest — must throw C2paException, not crash or silently truncate
+TEST_F(ReaderSidecarTest, WIP_SidecarManifest_LargeGarbageManifest_Throws) {
+    std::ifstream img(c2pa_test::get_fixture_path("C.jpg"), std::ios::binary);
+    auto ctx = std::make_shared<c2pa::Context>();
+    std::vector<uint8_t> large(1024 * 1024, 0xAB);
+    EXPECT_THROW(c2pa::Reader(ctx, "image/jpeg", img, large), c2pa::C2paException);
+}
