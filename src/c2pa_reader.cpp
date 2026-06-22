@@ -130,6 +130,9 @@ namespace c2pa
             throw C2paException();
         }
         c2pa_reader = updated;
+
+        // Stream not retained by C FFI
+        cpp_stream.reset();
     }
 
     Reader::Reader(IContextProvider& context, const std::string &format, std::istream &stream)
@@ -181,8 +184,7 @@ namespace c2pa
     {
         ensure_initialized();
 
-        // Wrap both streams before the FFI call:
-        // keep them alive as members for RAII symmetry (released by destructor).
+        // Wrap both streams for the FFI call.
         fragment_main_stream = std::make_unique<CppIStream>(stream);
         fragment_stream = std::make_unique<CppIStream>(fragment);
 
@@ -198,6 +200,10 @@ namespace c2pa
             throw C2paException();
         }
         c2pa_reader = updated;
+
+        // Both streams are read fully during the call and aren't retained
+        fragment_main_stream.reset();
+        fragment_stream.reset();
 
         return *this;
     }

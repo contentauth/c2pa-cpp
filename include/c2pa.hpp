@@ -744,8 +744,8 @@ namespace c2pa
         C2paReader *c2pa_reader;
         std::unique_ptr<std::ifstream> owned_stream;       // Owns file stream when created from path
         std::unique_ptr<CppIStream> cpp_stream;            // Wraps stream for C API; destroyed before owned_stream
-        std::unique_ptr<CppIStream> fragment_main_stream;  // Main/init stream wrapper for with_fragment()
-        std::unique_ptr<CppIStream> fragment_stream;       // Fragment stream wrapper for with_fragment()
+        std::unique_ptr<CppIStream> fragment_main_stream;  // Temp for with_fragment(), reset after each FFI call
+        std::unique_ptr<CppIStream> fragment_stream;       // Temp for with_fragment(), reset after each FFI call
         std::shared_ptr<IContextProvider> context_ref;
 
         void init_from_context(IContextProvider& context, const std::string &format, std::istream &stream);
