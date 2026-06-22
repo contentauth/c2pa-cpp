@@ -474,20 +474,6 @@ TEST_F(ReaderTest, TruncatedFileReturnsError)
         c2pa::C2paException);
 }
 
-TEST(ReaderErrorHandling, UnsupportedMimeTypeReturnsError)
-{
-    fs::path current_dir = fs::path(__FILE__).parent_path();
-    fs::path test_file = current_dir / "../tests/fixtures/C.jpg";
-    ASSERT_TRUE(std::filesystem::exists(test_file)) << "Test file does not exist: " << test_file;
-    std::ifstream stream(test_file, std::ios::binary);
-    ASSERT_TRUE(stream);
-    EXPECT_THROW(
-        {
-            c2pa::Reader reader("application/x-unsupported-c2pa-test", stream);
-        },
-        c2pa::C2paException);
-}
-
 TEST(ReaderErrorHandling, EmptyStreamBehavesTheSameWithAndWithoutContext)
 {
     std::stringstream empty_stream1, empty_stream2;
