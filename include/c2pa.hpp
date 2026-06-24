@@ -748,6 +748,18 @@ namespace c2pa
 
         void init_from_context(IContextProvider& context, const std::string &format, std::istream &stream);
         void init_from_context(IContextProvider& context, const std::filesystem::path &source_path);
+        void init_from_manifest_data_and_stream(IContextProvider& context,
+                                                 const std::string& format,
+                                                 std::istream& image_stream,
+                                                 const std::vector<uint8_t>& manifest_jumbf);
+
+        /// @brief Throw if the Reader holds no valid native handle.
+        void ensure_initialized() const {
+            if (c2pa_reader == nullptr) {
+                throw C2paException("Reader is not initialized");
+            }
+        }
+
         Reader() : c2pa_reader(nullptr) {}
 
     public:
@@ -795,6 +807,25 @@ namespace c2pa
         /// @param source_path The path to the file to read.
         /// @throws C2paException if context is null or context->is_valid() returns false.
         Reader(std::shared_ptr<IContextProvider> context, const std::filesystem::path &source_path);
+
+        /// @brief Create a Reader from a shared context, image stream, and external JUMBF manifest.
+        /// @details Performs full C2PA binding verification between @p image_stream and the provided
+        ///          JUMBF manifest bytes without requiring the manifest to be embedded in the asset.
+        ///          Typical use: sidecar .c2pa files, database-stored manifests, in-memory pipelines.
+        ///          The Reader retains a shared reference to the context for its lifetime.
+        /// @param context Shared context provider (trust anchors, verification policy).
+        /// @param format MIME type of the image stream (e.g., "image/jpeg").
+        /// @param image_stream Asset data. Must support seeking (used for exclusion-range hashing).
+        /// @param manifest_jumbf Raw JUMBF manifest bytes (e.g., contents of a .c2pa sidecar file).
+        /// @note @p image_stream, @p manifest_jumbf, and @p format need only remain valid for the
+        ///       duration of the construction call. The Reader does not retain their references.
+        /// @throws C2paException if context is null,
+        ///         context->is_valid() is false,
+        ///         manifest_jumbf is empty, or the C2PA library reports an error.
+        Reader(std::shared_ptr<IContextProvider> context,
+               const std::string& format,
+               std::istream& image_stream,
+               const std::vector<uint8_t>& manifest_jumbf);
 
         /// @brief Create a Reader from a stream (will use global settings if any loaded).
         /// @details The validation_status field in the JSON contains validation results.
@@ -877,8 +908,11 @@ namespace c2pa
 
         /// @brief Check if the reader was created from an embedded manifest.
         /// @return true if the manifest was embedded in the asset, false if external.
-        /// @throws C2paException for errors encountered by the C2PA library.
+        /// @throws C2paException if the Reader holds no valid handle (e.g. it was moved
+        ///         from, or a prior with_fragment() failed and consumed it), or for other
+        ///         errors encountered by the C2PA library.
         [[nodiscard]] inline bool is_embedded() const {
+            ensure_initialized();
             return c2pa_reader_is_embedded(c2pa_reader);
         }
 
@@ -887,6 +921,26 @@ namespace c2pa
         /// @return Optional string containing the remote URL, or std::nullopt if manifest was embedded.
         /// @throws C2paException for errors encountered by the C2PA library.
         [[nodiscard]] std::optional<std::string> remote_url() const;
+
+        /// @brief Process a BMFF fragment stream with this Reader instance.
+        /// @details Used for fragmented BMFF media (DASH/HLS streaming) where content is split
+        ///          into an init/main segment and separate fragment files. The Reader is
+        ///          created from the init segment (e.g. Reader(context, "video/mp4", init)),
+        ///          then goes through one fragment at a time via this method.
+        ///          The underlying native SDK consumes the current reader and
+        ///          returns a new one configured with the fragment.
+        ///          This method swaps the handle in place and returns *this for chaining
+        ///          across fragments as the reading steps go through fragments.
+        /// @param format MIME type of the media (e.g., "video/mp4").
+        /// @param stream The main/init segment.
+        /// @param fragment The current fragment to process.
+        /// @return *this, for chaining across multiple fragments.
+        /// @note @p stream and @p fragment need only remain valid for the duration of this call.
+        ///       The Reader does not retain a reference to either after returning.
+        /// @throws C2paException if the C2PA library reports an error.
+        ///         On failure the underlying reader handle is consumed and
+        ///         this Reader must not be used further.
+        Reader& with_fragment(const std::string& format, std::istream& stream, std::istream& fragment);
 
         /// @brief Get the manifest as a JSON string.
         /// @return The manifest as a JSON string.

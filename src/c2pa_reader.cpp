@@ -98,6 +98,43 @@ namespace c2pa
         c2pa_reader = updated;
     }
 
+    void Reader::init_from_manifest_data_and_stream(
+        IContextProvider& context,
+        const std::string& format,
+        std::istream& image_stream,
+        const std::vector<uint8_t>& manifest_jumbf)
+    {
+        if (!context.is_valid()) {
+            throw C2paException("Invalid Context provider IContextProvider");
+        }
+        if (manifest_jumbf.empty()) {
+            throw C2paException("manifest_jumbf must not be empty");
+        }
+
+        cpp_stream = std::make_unique<CppIStream>(image_stream);
+
+        c2pa_reader = c2pa_reader_from_context(context.c_context());
+        if (c2pa_reader == nullptr) {
+            throw C2paException("Failed to create reader from context");
+        }
+
+        // c2pa_reader_with_manifest_data_and_stream always consumes c2pa_reader.
+        C2paReader* updated = c2pa_reader_with_manifest_data_and_stream(
+            c2pa_reader,
+            format.c_str(),
+            cpp_stream->c_stream,
+            manifest_jumbf.data(),
+            manifest_jumbf.size());
+        c2pa_reader = nullptr;
+        if (updated == nullptr) {
+            throw C2paException();
+        }
+        c2pa_reader = updated;
+
+        // Stream not retained by C FFI
+        cpp_stream.reset();
+    }
+
     Reader::Reader(IContextProvider& context, const std::string &format, std::istream &stream)
         : c2pa_reader(nullptr)
     {
@@ -113,6 +150,9 @@ namespace c2pa
     Reader::Reader(std::shared_ptr<IContextProvider> context, const std::string &format, std::istream &stream)
         : c2pa_reader(nullptr)
     {
+        if (!context) {
+            throw C2paException("context must not be null");
+        }
         init_from_context(*context, format, stream);
         context_ref = std::move(context);
     }
@@ -120,8 +160,47 @@ namespace c2pa
     Reader::Reader(std::shared_ptr<IContextProvider> context, const std::filesystem::path &source_path)
         : c2pa_reader(nullptr)
     {
+        if (!context) {
+            throw C2paException("context must not be null");
+        }
         init_from_context(*context, source_path);
         context_ref = std::move(context);
+    }
+
+    Reader::Reader(std::shared_ptr<IContextProvider> context,
+                   const std::string& format,
+                   std::istream& image_stream,
+                   const std::vector<uint8_t>& manifest_jumbf)
+        : c2pa_reader(nullptr)
+    {
+        if (!context) {
+            throw C2paException("context must not be null");
+        }
+        init_from_manifest_data_and_stream(*context, format, image_stream, manifest_jumbf);
+        context_ref = std::move(context);
+    }
+
+    Reader& Reader::with_fragment(const std::string& format, std::istream& stream, std::istream& fragment)
+    {
+        ensure_initialized();
+
+        CppIStream main_wrapper(stream);
+        CppIStream fragment_wrapper(fragment);
+
+        // c2pa_reader_with_fragment consumes the existing reader and returns a new one.
+        // *this is returned for chaining so reading can go through all segments.
+        C2paReader* updated = c2pa_reader_with_fragment(
+            c2pa_reader,
+            format.c_str(),
+            main_wrapper.c_stream,
+            fragment_wrapper.c_stream);
+        c2pa_reader = nullptr;
+        if (updated == nullptr) {
+            throw C2paException();
+        }
+        c2pa_reader = updated;
+
+        return *this;
     }
 
     Reader::Reader(const std::string &format, std::istream &stream)
@@ -161,16 +240,19 @@ namespace c2pa
 
     std::string Reader::json() const
     {
+        ensure_initialized();
         return detail::c_string_to_string(c2pa_reader_json(c2pa_reader));
     }
 
     std::string Reader::detailed_json() const
     {
+        ensure_initialized();
         return detail::c_string_to_string(c2pa_reader_detailed_json(c2pa_reader));
     }
 
     std::string Reader::crjson() const
     {
+        ensure_initialized();
         return detail::c_string_to_string(c2pa_reader_crjson(c2pa_reader));
     }
 

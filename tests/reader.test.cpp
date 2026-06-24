@@ -15,6 +15,7 @@
 #include <nlohmann/json.hpp>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 
 #include "include/test_utils.hpp"
 
@@ -721,4 +722,127 @@ TEST(Reader, StreamWithExceptions) {
     } catch (const c2pa::C2paException&) {
         // An error result is acceptable; crossing the FFI with an exception is not.
     }
+}
+
+TEST_F(ReaderTest, ReaderFromFragmentDashFixtures) {
+    auto ctx = std::make_shared<c2pa::Context>();
+
+    std::ifstream init(c2pa_test::get_fixture_path("dashinit.mp4"), std::ios::binary);
+    ASSERT_TRUE(init.is_open());
+    c2pa::Reader reader(ctx, "video/mp4", init);
+
+    std::ifstream main_seg(c2pa_test::get_fixture_path("dashinit.mp4"), std::ios::binary);
+    std::ifstream fragment(c2pa_test::get_fixture_path("dash1.m4s"), std::ios::binary);
+    ASSERT_TRUE(main_seg.is_open());
+    ASSERT_TRUE(fragment.is_open());
+
+    auto& same = reader.with_fragment("video/mp4", main_seg, fragment);
+    EXPECT_EQ(&same, &reader);
+    EXPECT_FALSE(reader.json().empty());
+}
+
+TEST_F(ReaderTest, ReaderFromFragmentReaderCanMove) {
+    auto ctx = std::make_shared<c2pa::Context>();
+    std::ifstream init(c2pa_test::get_fixture_path("dashinit.mp4"), std::ios::binary);
+    ASSERT_TRUE(init.is_open());
+    c2pa::Reader reader(ctx, "video/mp4", init);
+
+    {
+        std::ifstream main_seg(c2pa_test::get_fixture_path("dashinit.mp4"), std::ios::binary);
+        std::ifstream fragment(c2pa_test::get_fixture_path("dash1.m4s"), std::ios::binary);
+        reader.with_fragment("video/mp4", main_seg, fragment);
+    }
+
+    c2pa::Reader moved = std::move(reader);
+    EXPECT_FALSE(moved.json().empty());
+}
+
+class ReaderSidecarTest : public ReaderTest {
+public:
+    // A sidecar manifest plus the asset bytes it is bound to.
+    struct TestSidecar {
+        std::vector<uint8_t> manifest;      // external JUMBF, to pass as manifest_jumbf
+        std::vector<uint8_t> asset_bytes;   // the asset the manifest's dataHash covers
+    };
+
+    // Create manifest bytes for an asset.
+    static TestSidecar make_test_sidecar_bytes(const fs::path& asset,
+                                                 const std::string& format) {
+        auto signer = c2pa_test::create_test_signer();
+        auto context = c2pa::Context();
+        auto manifest_json = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+        auto builder = c2pa::Builder(context, manifest_json);
+        builder.set_no_embed();
+        std::ifstream source(asset, std::ios::binary);
+        std::stringstream dest(std::ios::in | std::ios::out | std::ios::binary);
+        auto manifest_bytes = builder.sign(format, source, dest, signer);
+
+        std::string signed_str = dest.str();
+        return TestSidecar{
+            std::vector<uint8_t>(manifest_bytes.begin(), manifest_bytes.end()),
+            std::vector<uint8_t>(signed_str.begin(), signed_str.end())};
+    }
+
+    // True if any validation_status entry's code contains "dataHash".
+    static bool has_data_hash_failure(const std::string& reader_json) {
+        auto obj = nlohmann::json::parse(reader_json);
+        for (auto& status : obj.value("validation_status", nlohmann::json::array())) {
+            if (status.value("code", std::string()).find("dataHash") != std::string::npos) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Open the signed asset bytes as a seekable binary stream.
+    static std::unique_ptr<std::istream> open_asset_stream(const std::vector<uint8_t>& bytes) {
+        return std::make_unique<std::istringstream>(
+            std::string(bytes.begin(), bytes.end()), std::ios::binary);
+    }
+};
+
+TEST_F(ReaderSidecarTest, ReaderCanReadSidecar) {
+    auto sc = make_test_sidecar_bytes(c2pa_test::get_fixture_path("C.jpg"), "image/jpeg");
+    auto img = open_asset_stream(sc.asset_bytes);
+    auto ctx = std::make_shared<c2pa::Context>();
+    c2pa::Reader r(ctx, "image/jpeg", *img, sc.manifest);
+    EXPECT_FALSE(r.json().empty());
+    EXPECT_FALSE(r.is_embedded());
+    EXPECT_TRUE(nlohmann::json::parse(r.json()).contains("manifests"));
+    EXPECT_FALSE(has_data_hash_failure(r.json()));
+}
+
+TEST_F(ReaderSidecarTest, ReaderCanReadSidecarSpecialChars) {
+#ifdef _WIN32
+    auto asset = c2pa_test::get_fixture_path(L"CÖÄ_.jpg");
+#else
+    auto asset = c2pa_test::get_fixture_path("CÖÄ_.jpg");
+#endif
+    auto sc = make_test_sidecar_bytes(asset, "image/jpeg");
+    auto img = open_asset_stream(sc.asset_bytes);
+    auto ctx = std::make_shared<c2pa::Context>();
+    c2pa::Reader r(ctx, "image/jpeg", *img, sc.manifest);
+    EXPECT_FALSE(r.json().empty());
+    EXPECT_FALSE(r.is_embedded());
+    EXPECT_FALSE(has_data_hash_failure(r.json()));
+}
+
+TEST_F(ReaderSidecarTest, SidecarReaderCanMove) {
+    auto sc = make_test_sidecar_bytes(c2pa_test::get_fixture_path("C.jpg"), "image/jpeg");
+    auto img = open_asset_stream(sc.asset_bytes);
+    auto ctx = std::make_shared<c2pa::Context>();
+    c2pa::Reader r1(ctx, "image/jpeg", *img, sc.manifest);
+    c2pa::Reader r2 = std::move(r1);
+    EXPECT_FALSE(r2.json().empty());
+}
+
+TEST_F(ReaderSidecarTest, SidecarReaderResetsStreamPosition) {
+    auto sc = make_test_sidecar_bytes(c2pa_test::get_fixture_path("C.jpg"), "image/jpeg");
+    auto img = open_asset_stream(sc.asset_bytes);
+    img->seekg(249);
+    auto ctx = std::make_shared<c2pa::Context>();
+
+    // Reader can read even if stream img is at another pos than 0
+    c2pa::Reader r(ctx, "image/jpeg", *img, sc.manifest);
+    EXPECT_FALSE(r.json().empty());
 }
