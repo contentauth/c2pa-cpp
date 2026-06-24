@@ -744,8 +744,6 @@ namespace c2pa
         C2paReader *c2pa_reader;
         std::unique_ptr<std::ifstream> owned_stream;       // Owns file stream when created from path
         std::unique_ptr<CppIStream> cpp_stream;            // Wraps stream for C API; destroyed before owned_stream
-        std::unique_ptr<CppIStream> fragment_main_stream;  // Temp for with_fragment(), reset after each FFI call
-        std::unique_ptr<CppIStream> fragment_stream;       // Temp for with_fragment(), reset after each FFI call
         std::shared_ptr<IContextProvider> context_ref;
 
         void init_from_context(IContextProvider& context, const std::string &format, std::istream &stream);
@@ -892,8 +890,6 @@ namespace c2pa
             : c2pa_reader(std::exchange(other.c2pa_reader, nullptr)),
               owned_stream(std::move(other.owned_stream)),
               cpp_stream(std::move(other.cpp_stream)),
-              fragment_main_stream(std::move(other.fragment_main_stream)),
-              fragment_stream(std::move(other.fragment_stream)),
               context_ref(std::move(other.context_ref)) {
         }
 
@@ -903,8 +899,6 @@ namespace c2pa
                 c2pa_reader = std::exchange(other.c2pa_reader, nullptr);
                 owned_stream = std::move(other.owned_stream);
                 cpp_stream = std::move(other.cpp_stream);
-                fragment_main_stream = std::move(other.fragment_main_stream);
-                fragment_stream = std::move(other.fragment_stream);
                 context_ref = std::move(other.context_ref);
             }
             return *this;

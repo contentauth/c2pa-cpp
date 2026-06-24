@@ -184,26 +184,21 @@ namespace c2pa
     {
         ensure_initialized();
 
-        // Wrap both streams for the FFI call.
-        fragment_main_stream = std::make_unique<CppIStream>(stream);
-        fragment_stream = std::make_unique<CppIStream>(fragment);
+        CppIStream main_wrapper(stream);
+        CppIStream fragment_wrapper(fragment);
 
         // c2pa_reader_with_fragment consumes the existing reader and returns a new one.
         // *this is returned for chaining so reading can go through all segments.
         C2paReader* updated = c2pa_reader_with_fragment(
             c2pa_reader,
             format.c_str(),
-            fragment_main_stream->c_stream,
-            fragment_stream->c_stream);
+            main_wrapper.c_stream,
+            fragment_wrapper.c_stream);
         c2pa_reader = nullptr;
         if (updated == nullptr) {
             throw C2paException();
         }
         c2pa_reader = updated;
-
-        // Both streams are read fully during the call and aren't retained
-        fragment_main_stream.reset();
-        fragment_stream.reset();
 
         return *this;
     }
