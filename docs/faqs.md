@@ -114,7 +114,7 @@ builder.sign(source, output, signer);
 
 When creating a new manifest, the chain is preserved once the original asset is added as an ingredient. The ingredient carries the original asset's manifest data, so validators can trace the full history. If the original is not added as an ingredient, the provenance chain is broken: the new manifest has no link to the original. This might be intentional (starting fresh) or a mistake (losing provenance).
 
-### What replaced `read_file`, `read_ingredient_file`, and `sign_file`?
+## What replaced `read_file`, `read_ingredient_file`, and `sign_file`?
 
 These file-based functions not attached to an API-exposed object, `read_file`, `read_ingredient_file`, and `sign_file`, were deprecated, then removed. Each legacy function maps to another implementation path using existing APIs on the `Reader` or `Builder` objects:
 
