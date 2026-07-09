@@ -46,9 +46,16 @@ inline std::vector<std::string> c_mime_types_to_vector(const char* const* mime_t
   std::vector<std::string> result;
   if (mime_types == nullptr) { return result; }
 
-  result.reserve(count);
-  for(uintptr_t i = 0; i < count; i++) {
-    result.emplace_back(mime_types[i]);
+  try {
+    result.reserve(count);
+    for(uintptr_t i = 0; i < count; i++) {
+      if (mime_types[i] != nullptr) {
+        result.emplace_back(mime_types[i]);
+      }
+    }
+  } catch (...) {
+    c2pa_free_string_array(mime_types, count);
+    throw;
   }
 
   c2pa_free_string_array(mime_types, count);
@@ -254,11 +261,17 @@ inline std::string c_string_to_string(T* c_result) {
 /// @return Vector containing the bytes (throws if null or negative size)
 /// @details This helper extracts the pattern of checking C API results,
 ///          copying to a vector, and freeing the C-allocated memory.
-///          The C API contract is: if result < 0 or data == nullptr, the operation failed.
+///          The C API contract is: if result < 0, the operation failed. A null
+///          data pointer with size == 0 is a valid empty result (the C API
+///          returns null for empty byte arrays).
 inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int64_t size) {
-    if (size < 0 || data == nullptr) {
+    if (size < 0 || (data == nullptr && size > 0)) {
         c2pa_free(data);  // May be null or allocated, c2pa_free handles both
         throw C2paException();
+    }
+    if (size == 0) {
+        c2pa_free(data);
+        return {};
     }
 
     auto result = std::vector<unsigned char>(data, data + size);

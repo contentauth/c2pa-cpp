@@ -541,39 +541,6 @@ namespace c2pa
     [[deprecated("Use Context::from_json() or Context::from_settings() instead")]]
     void C2PA_CPP_API load_settings(const std::string& data, const std::string& format);
 
-    /// @brief Read a file and return the manifest JSON.
-    /// @param source_path The path to the file to read.
-    /// @param data_dir Optional directory to store binary resources.
-    /// @return Optional string containing the manifest JSON if a manifest was found.
-    /// @throws C2paException for errors encountered by the C2PA library.
-    /// @deprecated Use Reader object instead.
-    [[deprecated("Use Reader object instead")]]
-    std::optional<std::string> C2PA_CPP_API read_file(const std::filesystem::path &source_path, const std::optional<std::filesystem::path> data_dir = std::nullopt);
-
-    /// @brief Read a file and return an ingredient JSON.
-    /// @param source_path The path to the file to read.
-    /// @param data_dir The directory to store binary resources.
-    /// @return String containing the ingredient JSON.
-    /// @throws C2paException for errors encountered by the C2PA library.
-    /// @deprecated Use Reader and Builder.add_ingredient instead.
-    [[deprecated("Use Reader and Builder.add_ingredient")]]
-    std::string C2PA_CPP_API read_ingredient_file(const std::filesystem::path &source_path, const std::filesystem::path &data_dir);
-
-    /// @brief Add a manifest and sign a file.
-    /// @param source_path The path to the asset to be signed.
-    /// @param dest_path The path to write the signed file to.
-    /// @param manifest The manifest JSON to add to the file.
-    /// @param signer_info The signer info to use for signing.
-    /// @param data_dir Optional directory to store binary resources.
-    /// @throws C2paException for errors encountered by the C2PA library.
-    /// @deprecated Use Builder.sign instead.
-    [[deprecated("Use Builder.sign instead")]]
-    void C2PA_CPP_API sign_file(const std::filesystem::path &source_path,
-                            const std::filesystem::path &dest_path,
-                            const char *manifest,
-                            SignerInfo *signer_info,
-                            const std::optional<std::filesystem::path> data_dir = std::nullopt);
-
     /// @defgroup StreamWrappers Stream wrappers for C2PA C API
     /// @brief C++ stream types that adapt stream types to C2paStream.
     ///
@@ -600,7 +567,8 @@ namespace c2pa
         explicit CppIStream(IStream &istream) {
             static_assert(std::is_base_of<std::istream, IStream>::value,
                       "Stream must be derived from std::istream");
-            c_stream = c2pa_create_stream(reinterpret_cast<StreamContext *>(&istream), reader, seeker, writer, flusher);
+            // Upcast to std::istream* before type erasure; the callbacks cast the context back to std::istream*
+            c_stream = c2pa_create_stream(reinterpret_cast<StreamContext *>(static_cast<std::istream *>(&istream)), reader, seeker, writer, flusher);
             if (c_stream == nullptr) {
                 throw C2paException("Failed to create input stream wrapper: is stream open and valid?");
             }
@@ -661,7 +629,8 @@ namespace c2pa
         template <typename OStream>
         explicit CppOStream(OStream &ostream) {
             static_assert(std::is_base_of<std::ostream, OStream>::value, "Stream must be derived from std::ostream");
-            c_stream = c2pa_create_stream(reinterpret_cast<StreamContext *>(&ostream), reader, seeker, writer, flusher);
+            // Upcast to std::ostream* before type erasure; the callbacks cast the context back to std::ostream*
+            c_stream = c2pa_create_stream(reinterpret_cast<StreamContext *>(static_cast<std::ostream *>(&ostream)), reader, seeker, writer, flusher);
             if (c_stream == nullptr) {
                 throw C2paException("Failed to create output stream wrapper: is stream open and valid?");
             }
@@ -720,7 +689,8 @@ namespace c2pa
         template <typename IOStream>
         CppIOStream(IOStream &iostream) {
             static_assert(std::is_base_of<std::iostream, IOStream>::value, "Stream must be derived from std::iostream");
-            c_stream = c2pa_create_stream(reinterpret_cast<StreamContext *>(&iostream), reader, seeker, writer, flusher);
+            // Upcast to std::iostream* before type erasure; the callbacks cast the context back to std::iostream*
+            c_stream = c2pa_create_stream(reinterpret_cast<StreamContext *>(static_cast<std::iostream *>(&iostream)), reader, seeker, writer, flusher);
             if (c_stream == nullptr) {
                 throw C2paException("Failed to create I/O stream wrapper: is stream open and valid?");
             }
