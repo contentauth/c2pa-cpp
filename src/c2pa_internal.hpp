@@ -107,29 +107,37 @@ struct StreamSeekTraits<std::iostream> {
 };
 
 /// Seeker impl.
+/// Exceptions must not unwind into Rust/C, so any throw
+/// is converted to an IoError return.
 template<typename Stream>
 intptr_t stream_seeker(StreamContext* context, intptr_t offset, C2paSeekMode whence) {
-    auto* stream = reinterpret_cast<Stream*>(context);
-    if (!is_stream_usable(stream)) {
+    try {
+        auto* stream = reinterpret_cast<Stream*>(context);
+        if (!is_stream_usable(stream)) {
+            return stream_error_return(StreamError::IoError);
+        }
+        const std::ios_base::seekdir dir = whence_to_seekdir(whence);
+        stream->clear();
+        StreamSeekTraits<Stream>::seek(stream, offset, dir);
+        if (stream->fail()) {
+            return stream_error_return(StreamError::InvalidArgument);
+        }
+        if (stream->bad()) {
+            return stream_error_return(StreamError::IoError);
+        }
+        const int64_t pos = StreamSeekTraits<Stream>::tell(stream);
+        if (pos < 0) {
+            return stream_error_return(StreamError::IoError);
+        }
+        return static_cast<intptr_t>(pos);
+    } catch (...) {
         return stream_error_return(StreamError::IoError);
     }
-    const std::ios_base::seekdir dir = whence_to_seekdir(whence);
-    stream->clear();
-    StreamSeekTraits<Stream>::seek(stream, offset, dir);
-    if (stream->fail()) {
-        return stream_error_return(StreamError::InvalidArgument);
-    }
-    if (stream->bad()) {
-        return stream_error_return(StreamError::IoError);
-    }
-    const int64_t pos = StreamSeekTraits<Stream>::tell(stream);
-    if (pos < 0) {
-        return stream_error_return(StreamError::IoError);
-    }
-    return static_cast<intptr_t>(pos);
 }
 
 /// Reader impl.
+/// Exceptions must not unwind into Rust/C, so any throw
+/// is converted to an IoError return.
 template<typename Stream>
 intptr_t stream_reader(StreamContext* context, uint8_t* buffer, intptr_t size) {
     if (!context || !buffer) {
@@ -141,37 +149,47 @@ intptr_t stream_reader(StreamContext* context, uint8_t* buffer, intptr_t size) {
     if (size == 0) {
         return 0;
     }
-    auto* stream = reinterpret_cast<Stream*>(context);
-    if (!is_stream_usable(stream)) {
-        return stream_error_return(StreamError::IoError);
-    }
-    stream->read(reinterpret_cast<char*>(buffer), size);
-    if (stream->fail()) {
-        if (!stream->eof()) {
-            return stream_error_return(StreamError::InvalidArgument);
+    try {
+        auto* stream = reinterpret_cast<Stream*>(context);
+        if (!is_stream_usable(stream)) {
+            return stream_error_return(StreamError::IoError);
         }
-    }
-    if (stream->bad()) {
+        stream->read(reinterpret_cast<char*>(buffer), size);
+        if (stream->fail()) {
+            if (!stream->eof()) {
+                return stream_error_return(StreamError::InvalidArgument);
+            }
+        }
+        if (stream->bad()) {
+            return stream_error_return(StreamError::IoError);
+        }
+        return static_cast<intptr_t>(stream->gcount());
+    } catch (...) {
         return stream_error_return(StreamError::IoError);
     }
-    return static_cast<intptr_t>(stream->gcount());
 }
 
 /// Get stream from context, used by writer and flusher.
+/// Exceptions must not unwind into Rust/C, so any throw
+/// is converted to an IoError return.
 template<typename Stream, typename Op>
 intptr_t stream_op(StreamContext* context, Op op) {
-    auto* stream = reinterpret_cast<Stream*>(context);
-    if (!is_stream_usable(stream)) {
+    try {
+        auto* stream = reinterpret_cast<Stream*>(context);
+        if (!is_stream_usable(stream)) {
+            return stream_error_return(StreamError::IoError);
+        }
+        const intptr_t result = op(stream);
+        if (stream->fail()) {
+            return stream_error_return(StreamError::InvalidArgument);
+        }
+        if (stream->bad()) {
+            return stream_error_return(StreamError::IoError);
+        }
+        return result;
+    } catch (...) {
         return stream_error_return(StreamError::IoError);
     }
-    const intptr_t result = op(stream);
-    if (stream->fail()) {
-        return stream_error_return(StreamError::InvalidArgument);
-    }
-    if (stream->bad()) {
-        return stream_error_return(StreamError::IoError);
-    }
-    return result;
 }
 
 /// Writer impl.
