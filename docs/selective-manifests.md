@@ -841,7 +841,7 @@ The signed output contains exactly the loaded ingredient.
 
 #### Migrating from the removed read_ingredient_file
 
-The removed function `read_ingredient_file(source_path, data_dir)` read an asset, returned a formed ingredient JSON, and wrote the ingredient's binary resources (thumbnail and manifest data) to `data_dir`, so a later signing step could load that directory and embed the ingredient into a carrier. The behavior can be reimplementated with `Builder` and `Reader` objects: form the ingredient, archive it, read it back, write the resources to disk under stable non-colliding names, then reuse the directory to sign.
+The removed function `read_ingredient_file(source_path, data_dir)` read an asset, returned a formed ingredient JSON, and wrote the ingredient's binary resources (thumbnail and manifest data) to `data_dir`, so a later signing step could load that directory and embed the ingredient into a carrier. The behavior can be reimplemented with `Builder` and `Reader` objects: form the ingredient, archive it, read it back, write the resources to disk under stable non-colliding names, then reuse the directory to sign.
 
 The legacy API derived each file name from the ingredient's `instance_id` rather than a fixed name (to avoid collisions). That is what lets several ingredients share one output directory without their thumbnail or `manifest_data` files overwriting each other.
 
@@ -893,16 +893,35 @@ ingredient.erase("label");  // drop the archive-only assertion label before reus
 std::ofstream(output_dir / (stem + ".json")) << ingredient.dump(2);
 
 // Reuse: load the extracted ingredient (repeat the block above per ingredient to
-// collect several ingredients) and sign a, resolving resources from output_dir.
+// collect several) and sign a carrier, resolving resources from output_dir.
 json manifest = {{"ingredients", json::array({ingredient})}};
 c2pa::Builder sign_builder(context, manifest.dump());
 sign_builder.set_base_path(output_dir.string());  // resolves resources
 sign_builder.sign(carrier_path, output_path, signer);
 ```
 
-To reproduce the full `read_ingredient_file` directory behavior for multiple ingredients, run the extract block once per source and append each resulting `ingredient` object to the `ingredients` array before signing. Because file names came from `instance_id` with the legacy API, the extracted resources for every ingredient coexist in one directory once names are ensured to be unique.
+To reproduce the full `read_ingredient_file` directory behavior for multiple ingredients, run the extract block once per source and append each resulting `ingredient` object to the `ingredients` array before signing. Deriving the file names from each ingredient's `instance_id` keeps them unique, so the extracted resources for every ingredient coexist in one directory without overwriting each other.
 
-> **Note:** `set_base_path` is marked deprecated. To avoid it, register each extracted resource explicitly with `add_resource(identifier, stream)` on the signing builder instead (see [Dedicated ingredient archive APIs](#dedicated-ingredient-archive-apis) and the `add_resource` loop in the legacy pattern below).
+##### Without `set_base_path`
+
+`set_base_path` is deprecated. The equivalent is to register each resource the ingredient JSON references directly on the signing builder with `add_resource`, instead of pointing the builder at a directory. Swap the sign block above for this:
+
+```cpp
+// Same extracted `ingredient` objects as above. Register every referenced resource
+// (thumbnail, and manifest_data when present) explicitly, then sign.
+c2pa::Builder sign_builder(context, manifest.dump());
+for (const auto& ingredient : ingredients) {
+    std::string thumb_id = ingredient["thumbnail"]["identifier"];
+    sign_builder.add_resource(thumb_id, output_dir / thumb_id);
+    if (ingredient.contains("manifest_data")) {
+        std::string md_id = ingredient["manifest_data"]["identifier"];
+        sign_builder.add_resource(md_id, output_dir / md_id);
+    }
+}
+sign_builder.sign(carrier_path, output_path, signer);
+```
+
+Both paths produce the same signed result: the same ingredients, with the same resources attached. Register a resource for every `identifier` the ingredient JSON references, or the sign call is missing one; `set_base_path` did this implicitly by resolving names against the directory. `add_resource` also has a stream overload, `add_resource(identifier, stream)`, if the resource is already in memory rather than on disk (see [Dedicated ingredient archive APIs](#dedicated-ingredient-archive-apis) and the `add_resource` loop in the legacy pattern below).
 
 #### Legacy: read-filter-rebuild APIs
 

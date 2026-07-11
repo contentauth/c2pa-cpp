@@ -145,7 +145,7 @@ TEST_F(LegacyApiMigrationTest, ReadFile_WithDataDir_ExtractResources) {
 // What it did: read an asset, returned the formed ingredient JSON string, and
 //   wrote the ingredient's binary resources (thumbnail, and any manifest data) to
 //   data_dir.
-// Current API: there is no single-call drop-in, but the whole behavior is a short
+// Current API: there is no single-call replacement, but the behavior is a short
 //   reimplementation on top of Builder/Reader:
 //     1. add_ingredient(json, source_path) forms the ingredient in a working store,
 //     2. write_ingredient_archive(id, buf) archives just that ingredient,
@@ -256,8 +256,8 @@ TEST_F(LegacyApiMigrationTest, ReadIngredientFile_ExtractToDirThenSignCarrier) {
 // Extract two ingredients from the same working store into the SAME directory
 // and confirm their thumbnail and manifest_data files do not overwrite each other, then sign
 // a carrier with both and confirm both survive the round-trip. Fixed names like
-// "thumbnail.jpg" and "manifest_data.c2pa" would fail this test,
-// instance_id-derived names to ensure name unicity pass it.
+// "thumbnail.jpg" and "manifest_data.c2pa" would fail this test; instance_id-derived
+// names, which are unique per ingredient, pass it.
 TEST_F(LegacyApiMigrationTest, ReadIngredientFile_MultipleIngredientsSameStoreNoCollision) {
     auto context = std::make_shared<c2pa::Context>();
 
@@ -363,6 +363,173 @@ TEST_F(LegacyApiMigrationTest, ReadIngredientFile_MultipleIngredientsSameStoreNo
     for (const auto& ing : signed_ings) titles.push_back(ing.value("title", std::string()));
     EXPECT_NE(std::find(titles.begin(), titles.end(), "A.jpg"), titles.end());
     EXPECT_NE(std::find(titles.begin(), titles.end(), "C.jpg"), titles.end());
+
+    fs::remove_all(output_dir);
+}
+
+// The extract-and-reuse flow above signs with set_base_path, which is deprecated.
+// add_resource(identifier, path) is the replacement: register each referenced resource
+// on the builder instead of pointing it at a directory. This test signs the same
+// extracted ingredients both ways and checks that the two signed manifests carry the same
+// ingredients with the same resources attached. The check ignores identifiers: two
+// independent signs generate different signatures and fresh JUMBF identifier URIs, so it
+// compares structure (title, relationship, format, and resource presence) rather than raw
+// JSON.
+TEST_F(LegacyApiMigrationTest, ReadIngredientFile_AddResourceMatchesSetBasePath) {
+    auto context = std::make_shared<c2pa::Context>();
+
+    auto uuid_stem = [](const std::string& instance_id) {
+        auto colon = instance_id.rfind(':');
+        std::string stem = (colon != std::string::npos) ? instance_id.substr(colon + 1)
+                                                         : instance_id;
+        return stem.empty() ? std::string("ingredient") : stem;
+    };
+    auto ext_for_format = [](const std::string& mime) {
+        std::string ext = mime.substr(mime.find('/') + 1);
+        return ext == "jpeg" ? std::string("jpg") : ext;
+    };
+
+    auto output_dir = get_temp_path("read_ingredient_addresource_dir");
+    fs::create_directories(output_dir);
+
+    // --- Extract once: two ingredients into one directory (shared input for both signs).
+    struct Spec { std::string id; std::string fixture; std::string title; };
+    const std::vector<Spec> specs = {
+        {"mig:ingredient-A", "A.jpg", "A.jpg"},
+        {"mig:ingredient-C", "C.jpg", "C.jpg"},
+    };
+
+    auto builder = c2pa::Builder(context, "{}");
+    for (const auto& s : specs) {
+        builder.add_ingredient(
+            R"({"instance_id": ")" + s.id + R"(", "title": ")" + s.title +
+                R"(", "relationship": "componentOf"})",
+            c2pa_test::get_fixture_path(s.fixture));
+    }
+
+    std::vector<json> extracted;
+    std::vector<std::string> thumb_names;
+    for (const auto& s : specs) {
+        std::stringstream buf(std::ios::in | std::ios::out | std::ios::binary);
+        ASSERT_NO_THROW(builder.write_ingredient_archive(s.id, buf));
+        buf.seekg(0);
+
+        c2pa::Reader reader(context, "application/c2pa", buf);
+        auto store = json::parse(reader.json());
+        std::string active = store["active_manifest"];
+        auto& ings = store["manifests"][active]["ingredients"];
+        ASSERT_FALSE(ings.empty());
+        json ingredient = ings[0];
+
+        std::string stem = uuid_stem(s.id);
+        ASSERT_TRUE(ingredient.contains("thumbnail"));
+        std::string thumb_name = stem + "." +
+            ext_for_format(ingredient["thumbnail"]["format"]);
+        ASSERT_GT(reader.get_resource(ingredient["thumbnail"]["identifier"],
+                                      output_dir / thumb_name), 0);
+        ingredient["thumbnail"]["identifier"] = thumb_name;
+        thumb_names.push_back(thumb_name);
+
+        if (ingredient.contains("manifest_data")) {
+            std::string md_name = stem + ".c2pa";
+            ASSERT_GT(reader.get_resource(ingredient["manifest_data"]["identifier"],
+                                          output_dir / md_name), 0);
+            ingredient["manifest_data"]["identifier"] = md_name;
+        }
+
+        ingredient.erase("label");
+        std::ofstream(output_dir / (stem + ".json")) << ingredient.dump(2);
+        extracted.push_back(ingredient);
+    }
+
+    // Shared extract stays covered: distinct thumbnails, 2 JSON, 1 manifest_data.
+    ASSERT_EQ(thumb_names.size(), 2u);
+    EXPECT_NE(thumb_names[0], thumb_names[1]);
+    size_t json_count = 0, c2pa_count = 0;
+    for (const auto& entry : fs::directory_iterator(output_dir)) {
+        if (entry.path().extension() == ".json") ++json_count;
+        if (entry.path().extension() == ".c2pa") ++c2pa_count;
+    }
+    EXPECT_EQ(json_count, 2u);
+    EXPECT_EQ(c2pa_count, 1u);
+
+    auto signer = c2pa_test::create_test_signer();
+
+    // --- Sign path A: set_base_path resolves resources against the directory.
+    auto builder_a = c2pa::Builder(context, json{{"ingredients", extracted}}.dump());
+    builder_a.set_base_path(output_dir.string());
+    auto out_a = get_temp_path("read_ingredient_addresource_a.jpg");
+    std::vector<unsigned char> md_a;
+    ASSERT_NO_THROW(md_a = builder_a.sign(c2pa_test::get_fixture_path("A.jpg"), out_a, signer));
+    EXPECT_FALSE(md_a.empty());
+
+    // --- Sign path B: no set_base_path; register every referenced resource explicitly.
+    auto builder_b = c2pa::Builder(context, json{{"ingredients", extracted}}.dump());
+    for (const auto& ing : extracted) {
+        std::string thumb_id = ing["thumbnail"]["identifier"];
+        builder_b.add_resource(thumb_id, output_dir / thumb_id);
+        if (ing.contains("manifest_data")) {
+            std::string md_id = ing["manifest_data"]["identifier"];
+            builder_b.add_resource(md_id, output_dir / md_id);
+        }
+    }
+    auto out_b = get_temp_path("read_ingredient_addresource_b.jpg");
+    std::vector<unsigned char> md_b;
+    ASSERT_NO_THROW(md_b = builder_b.sign(c2pa_test::get_fixture_path("A.jpg"), out_b, signer));
+    EXPECT_FALSE(md_b.empty());
+
+    // --- Cross-check: both signed manifests carry the same ingredients + resources.
+    // Reduce each ingredient to identifier-safe structure: stable fields plus, for each
+    // resource, only its presence and format (drop the generated identifier / hashes).
+    auto normalize = [](const json& ingredients) {
+        json out = json::array();
+        for (const auto& ing : ingredients) {
+            json n;
+            n["title"] = ing.value("title", std::string());
+            n["relationship"] = ing.value("relationship", std::string());
+            n["format"] = ing.value("format", std::string());
+            for (const char* key : {"thumbnail", "manifest_data"}) {
+                if (ing.contains(key))
+                    n[key] = {{"present", true},
+                              {"format", ing[key].value("format", std::string())}};
+            }
+            out.push_back(n);
+        }
+        // Order-independent: the two builders may list ingredients in either order.
+        std::sort(out.begin(), out.end(), [](const json& a, const json& b) {
+            return a["title"].get<std::string>() < b["title"].get<std::string>();
+        });
+        return out;
+    };
+
+    auto reader_a = c2pa::Reader::from_asset(context, out_a);
+    auto reader_b = c2pa::Reader::from_asset(context, out_b);
+    ASSERT_TRUE(reader_a.has_value());
+    ASSERT_TRUE(reader_b.has_value());
+    auto parsed_a = json::parse(reader_a->json());
+    auto parsed_b = json::parse(reader_b->json());
+    auto& ings_a = parsed_a["manifests"][parsed_a["active_manifest"].get<std::string>()]["ingredients"];
+    auto& ings_b = parsed_b["manifests"][parsed_b["active_manifest"].get<std::string>()]["ingredients"];
+
+    ASSERT_EQ(ings_a.size(), 2u);
+    ASSERT_EQ(ings_b.size(), ings_a.size());
+    // The two sign paths are equivalent: same ingredients, same resources attached.
+    EXPECT_EQ(normalize(ings_a), normalize(ings_b));
+
+    // Also check each manifest directly: both carry A.jpg and C.jpg, every ingredient has
+    // a thumbnail, and exactly one ingredient per manifest has manifest_data.
+    for (auto* ings : {&ings_a, &ings_b}) {
+        std::vector<std::string> titles;
+        size_t md_count = 0;
+        for (const auto& ing : *ings) {
+            titles.push_back(ing.value("title", std::string()));
+            EXPECT_TRUE(ing.contains("thumbnail"));
+            if (ing.contains("manifest_data")) ++md_count;
+        }
+        EXPECT_NE(std::find(titles.begin(), titles.end(), "A.jpg"), titles.end());
+        EXPECT_NE(std::find(titles.begin(), titles.end(), "C.jpg"), titles.end());
+        EXPECT_EQ(md_count, 1u);
+    }
 
     fs::remove_all(output_dir);
 }
