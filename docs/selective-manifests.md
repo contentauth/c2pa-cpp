@@ -839,6 +839,71 @@ sink.sign(source_path, output_path, signer);
 
 The signed output contains exactly the loaded ingredient.
 
+#### Migrating from the removed read_ingredient_file
+
+The removed function `read_ingredient_file(source_path, data_dir)` read an asset, returned a formed ingredient JSON, and wrote the ingredient's binary resources (thumbnail and manifest data) to `data_dir`, so a later signing step could load that directory and embed the ingredient into a carrier. The behavior can be reimplementated with `Builder` and `Reader` objects: form the ingredient, archive it, read it back, write the resources to disk under stable non-colliding names, then reuse the directory to sign.
+
+The legacy API derived each file name from the ingredient's `instance_id` rather than a fixed name (to avoid collisions). That is what lets several ingredients share one output directory without their thumbnail or `manifest_data` files overwriting each other.
+
+```cpp
+namespace fs = std::filesystem;
+
+// Map a mime format ("image/jpeg") to a file extension,
+// and turn an instance_id into a collision-resistant filename stem.
+auto ext_for_format = [](const std::string& mime) {
+    std::string ext = mime.substr(mime.find('/') + 1);
+    return ext == "jpeg" ? std::string("jpg") : ext;
+};
+auto uuid_stem = [](const std::string& instance_id) {
+    auto colon = instance_id.rfind(':');
+    std::string stem = (colon != std::string::npos) ? instance_id.substr(colon + 1)
+                                                     : instance_id;
+    return stem.empty() ? std::string("ingredient") : stem;
+};
+
+// Extract: form the ingredient, archive just it, and write its JSON,
+// thumbnail and nested manifest_data (if any) into output_dir.
+fs::create_directories(output_dir);
+c2pa::Builder builder(context, "{}");
+builder.add_ingredient(
+    R"({"label": "my-ingredient", "title": "source.jpg", "relationship": "componentOf"})",
+    source_path);
+
+std::stringstream archive_buf(std::ios::in | std::ios::out | std::ios::binary);
+builder.write_ingredient_archive("my-ingredient", archive_buf);
+archive_buf.seekg(0);
+
+c2pa::Reader reader(context, "application/c2pa", archive_buf);
+auto store = json::parse(reader.json());
+std::string active = store["active_manifest"];
+json ingredient = store["manifests"][active]["ingredients"][0];
+
+std::string stem = uuid_stem(ingredient.value("instance_id", std::string()));
+if (ingredient.contains("thumbnail")) {
+    std::string name = stem + "." + ext_for_format(ingredient["thumbnail"]["format"]);
+    reader.get_resource(ingredient["thumbnail"]["identifier"], output_dir / name);
+    ingredient["thumbnail"]["identifier"] = name;  // rewrite to the on-disk name
+}
+if (ingredient.contains("manifest_data")) {
+    std::string name = stem + ".c2pa";
+    reader.get_resource(ingredient["manifest_data"]["identifier"], output_dir / name);
+    ingredient["manifest_data"]["identifier"] = name;
+}
+ingredient.erase("label");  // drop the archive-only assertion label before reuse
+std::ofstream(output_dir / (stem + ".json")) << ingredient.dump(2);
+
+// Reuse: load the extracted ingredient (repeat the block above per ingredient to
+// collect several ingredients) and sign a, resolving resources from output_dir.
+json manifest = {{"ingredients", json::array({ingredient})}};
+c2pa::Builder sign_builder(context, manifest.dump());
+sign_builder.set_base_path(output_dir.string());  // resolves resources
+sign_builder.sign(carrier_path, output_path, signer);
+```
+
+To reproduce the full `read_ingredient_file` directory behavior for multiple ingredients, run the extract block once per source and append each resulting `ingredient` object to the `ingredients` array before signing. Because file names came from `instance_id` with the legacy API, the extracted resources for every ingredient coexist in one directory once names are ensured to be unique.
+
+> **Note:** `set_base_path` is marked deprecated. To avoid it, register each extracted resource explicitly with `add_resource(identifier, stream)` on the signing builder instead (see [Dedicated ingredient archive APIs](#dedicated-ingredient-archive-apis) and the `add_resource` loop in the legacy pattern below).
+
 #### Legacy: read-filter-rebuild APIs
 
 > [!NOTE]
