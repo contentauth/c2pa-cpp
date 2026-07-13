@@ -147,7 +147,7 @@ builder.sign(source_path, output_path, signer);
 
 ### Start fresh and preserve provenance
 
-Sometimes all existing assertions and ingredients must be discarded while the provenance chain is kept. This is done by creating a new `Builder` with a new manifest definition and adding the original signed asset as an ingredient using `add_ingredient()`.
+Sometimes all existing assertions and ingredients may need to be discarded but the provenance chain should be maintained nevertheless. This is done by creating a new `Builder` with a new manifest definition and adding the original signed asset as an ingredient using `add_ingredient()`.
 
 The function `add_ingredient()` does not copy the original's assertions into the new manifest. Instead, it stores the original's entire manifest store as opaque binary data inside the ingredient record. This means:
 
@@ -1024,7 +1024,7 @@ This section covers the **legacy** load path: producer calls `to_archive`, signi
 >
 > **Labels baked into the archive ingredient at archive-creation time do not carry through as linking keys either.** The label must be re-asserted on the signing builder's `add_ingredient` call so action and archived ingredient properly link.
 
-Labels are build-time linking keys only. An action and an ingredient that share the same label string are linked. The SDK may reassign the actual label in the signed manifest.
+Labels are build-time linking keys only. An action and an ingredient that share the same label string are linked (the label acts as a linking key: the label identifies the link, and is consumed at signing time). The SDK may reassign the actual label in the signed manifest.
 
 ##### Minimal archive to action linking example
 
