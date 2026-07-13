@@ -147,7 +147,7 @@ builder.sign(source_path, output_path, signer);
 
 ### Start fresh and preserve provenance
 
-Sometimes all existing assertions and ingredients may need to be discarded but the provenance chain should be maintained nevertheless. This is done by creating a new `Builder` with a new manifest definition and adding the original signed asset as an ingredient using `add_ingredient()`.
+Sometimes you need to discard all existing assertions and ingredients while still keeping the provenance chain. Do this by creating a new `Builder` with a new manifest definition and adding the original signed asset as an ingredient using `add_ingredient()`.
 
 The function `add_ingredient()` does not copy the original's assertions into the new manifest. Instead, it stores the original's entire manifest store as opaque binary data inside the ingredient record. This means:
 
@@ -428,7 +428,7 @@ Use `label` when defining manifests in JSON. Use `instance_id` when working prog
 
 ## Working with archives
 
-A `Builder` represents a **working store**: a manifest that is being assembled but has not yet been signed. Archives serialize this working store (definition + resources) to a `.c2pa` binary format, allowing to save, transfer, or resume the work later. For more background on working stores and archives, see [Working stores](https://opensource.contentauthenticity.org/docs/rust-sdk/docs/working-stores).
+A `Builder` represents a **working store**: a manifest that is being assembled but has not yet been signed. Archives serialize this working store (definition + resources) to a `.c2pa` binary format, so you can save, transfer, or resume the work later. For more background on working stores and archives, see [Working stores](https://opensource.contentauthenticity.org/docs/rust-sdk/docs/working-stores).
 
 There are two distinct types of archives, sharing the same binary format but being conceptually different: builder archives and ingredient archives.
 
@@ -1024,7 +1024,7 @@ This section covers the **legacy** load path: producer calls `to_archive`, signi
 >
 > **Labels baked into the archive ingredient at archive-creation time do not carry through as linking keys either.** The label must be re-asserted on the signing builder's `add_ingredient` call so action and archived ingredient properly link.
 
-Labels are build-time linking keys only. A label, as linking key, links ingredients and actions using it together: the label identifies the link. The SDK may reassign the actual label in the signed manifest.
+Labels are build-time linking keys only. An action and an ingredient that share the same label string are linked. The SDK may reassign the actual label in the signed manifest.
 
 ##### Minimal archive to action linking example
 
@@ -1063,7 +1063,7 @@ builder.add_ingredient(
     })",
     archive_path);
 
-// Note that a signing, the SDK may reassign the labels
+// Note that at signing, the SDK may reassign the labels
 builder.sign(source_path, output_path, signer);
 ```
 
@@ -1253,7 +1253,7 @@ builder.sign(source_path, output_path, signer);
 
 #### Using `add_resource` instead of `set_base_path`
 
-`set_base_path` carries a `@deprecated` note in the C++ header. `add_resource` is its replacement, as it puts resource on a `Builder` object instance.
+`set_base_path` carries a `@deprecated` note in the C++ header. `add_resource` is its replacement, registering each resource directly on a `Builder` instance.
 
 An ingredient's JSON references its (binary) resources by an `identifier`. `set_base_path(dir)` resolved every identifier implicitly, by matching each name against one directory on disk. `add_resource(identifier, path)` does the same job explicitly: one call per identifier the ingredient JSON declares, naming the file to load for it.
 
@@ -1288,7 +1288,7 @@ Register a resource for every `identifier` the ingredient JSON references, or th
 
 #### Working with ingredient directories
 
-A legacy ingredient could live on disk as an ingredient directory containing an `ingredient.json` file, an optional `manifest_data.c2pa` manifest store, and an optional thumbnail file. You may have generated such a directory previously (see [Migrating from `read_ingredient_file`](#migrating-from-read_ingredient_file) below) or receive one from another source. To it onto a `Builder`, the ingredient needs to be added to the Builder and resolve its resources: each `ResourceRef` `identifier` in the JSON is a path relative to the directory, resolved through `set_base_path` or registered explicitly with `add_resource` (see [Using `add_resource` instead of `set_base_path`](#using-add_resource-instead-of-set_base_path)).
+A legacy ingredient could live on disk as an ingredient directory containing an `ingredient.json` file, an optional `manifest_data.c2pa` manifest store, and an optional thumbnail file. You may have generated such a directory previously (see [Migrating from `read_ingredient_file`](#migrating-from-read_ingredient_file) below) or receive one from another source. To use it on a `Builder`, add the ingredient and resolve its resources: each `ResourceRef` `identifier` in the JSON is a path relative to the directory, resolved through `set_base_path` or registered explicitly with `add_resource` (see [Using `add_resource` instead of `set_base_path`](#using-add_resource-instead-of-set_base_path)).
 
 ```text
 my_ingredient/
@@ -1565,7 +1565,7 @@ Note that some `ingredient.json` files may already carry an `instance_id` (read 
 
 When an ingredient carries both a `label` and an `instance_id`, the `label` takes precedence. The SDK checks each `ingredientIds` value against labels before instance_ids, so a value that matches a `label` resolves to that ingredient even if some other ingredient has a matching `instance_id`. The `instance_id` is consulted only for an id that matches no label.
 
-The `label` used for linking is not preserved verbatim on the ingredient after signing. The SDK consumes it as the linking (identifying) key and rewrites it to the ingredient assertion's own label: reading the signed output back, the ingredient's `label` is an SDK-assigned label, not the string that was assigned in the `label` value. An explicit `instance_id`, by contrast, stays in the ingredient data unchanged. So if you need a stable, caller-controlled identifier that survives signing and round-trips, use `instance_id`. Use `label` to identify the link itself before signing: a label identifies a link of an ingredient to an action, but is not a stable ingredient-only identifier.
+The `label` used for linking is not preserved verbatim on the ingredient after signing. The SDK consumes it as the linking (identifying) key and rewrites it to the ingredient assertion's own label: reading the signed output back, the ingredient's `label` is an SDK-assigned label, not the string that was assigned in the `label` value. An explicit `instance_id`, by contrast, stays in the ingredient data unchanged. So if you need a stable, caller-controlled identifier that survives signing and round-trips, use `instance_id`. Use `label` only to link an ingredient to an action before signing; it is not a durable identifier for the ingredient itself.
 
 ```cpp
 // ingredient.json declares the label the action will reference:
