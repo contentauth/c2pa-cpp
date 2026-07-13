@@ -1253,11 +1253,11 @@ builder.sign(source_path, output_path, signer);
 
 #### Using `add_resource` instead of `set_base_path`
 
-`set_base_path` is deprecated: it carries a `@deprecated` note in the C++ header. `add_resource` is its replacement, and the two sections below use it throughout. This section explains the swap once so the recipes can refer back to it.
+`set_base_path` carries a `@deprecated` note in the C++ header. `add_resource` is its replacement, as it puts resource on a `Builder` object instance.
 
-An ingredient's JSON references its (binary) resources by `identifier` (a thumbnail, and a `manifest_data` store when present). `set_base_path(dir)` resolved every identifier implicitly, by matching each name against one directory on disk. `add_resource(identifier, path)` does the same job explicitly: one call per identifier the ingredient JSON declares, naming the file to load for it.
+An ingredient's JSON references its (binary) resources by an `identifier`. `set_base_path(dir)` resolved every identifier implicitly, by matching each name against one directory on disk. `add_resource(identifier, path)` does the same job explicitly: one call per identifier the ingredient JSON declares, naming the file to load for it.
 
-The two produce the same signed result. Here is a `set_base_path` sign step:
+Here is a `set_base_path` sign step:
 
 ```cpp
 c2pa::Builder sign_builder(context, manifest.dump());
@@ -1265,7 +1265,7 @@ sign_builder.set_base_path(dir.string());   // resolves every identifier by name
 sign_builder.sign(carrier_path, output_path, signer);
 ```
 
-and the equivalent with `add_resource`, registering each referenced resource for every ingredient:
+And the equivalent with `add_resource`, registering each referenced resource for every ingredient:
 
 ```cpp
 c2pa::Builder sign_builder(context, manifest.dump());
@@ -1282,12 +1282,13 @@ for (const auto& ingredient : ingredients) {
 sign_builder.sign(carrier_path, output_path, signer);
 ```
 
-Register a resource for every `identifier` the ingredient JSON references, or the sign call is missing one; `set_base_path` did this implicitly by resolving names against the directory. `add_resource` also has a stream overload, `add_resource(identifier, stream)`, when the resource is already in memory rather than on disk (see [Dedicated ingredient archive APIs](#dedicated-ingredient-archive-apis)).
+Register a resource for every `identifier` the ingredient JSON references, or the sign call will be missing resources (and fail signing). `set_base_path` did this implicitly by resolving names against the directory set as base path.
 
+`add_resource` also has a stream overload, `add_resource(identifier, stream)`, when the resource is already in memory rather than on disk (see [Dedicated ingredient archive APIs](#dedicated-ingredient-archive-apis)).
 
 #### Working with ingredient directories
 
-An ingredient can live on disk as a directory: an `ingredient.json` file, an optional `manifest_data.c2pa` manifest store, and an optional thumbnail file. You may generate such a directory (see [Migrating from `read_ingredient_file`](#migrating-from-read_ingredient_file) below) or receive one from another source. Loading it onto a `Builder` instance is the same in both cases: each `ResourceRef` `identifier` in the JSON is a path relative to the directory, resolved through `set_base_path` or registered explicitly with `add_resource` (see [Using `add_resource` instead of `set_base_path`](#using-add_resource-instead-of-set_base_path)).
+A legacy ingredient could live on disk as an ingredient directory containing an `ingredient.json` file, an optional `manifest_data.c2pa` manifest store, and an optional thumbnail file. You may have generated such a directory previously (see [Migrating from `read_ingredient_file`](#migrating-from-read_ingredient_file) below) or receive one from another source. To it onto a `Builder`, the ingredient needs to be added to the Builder and resolve its resources: each `ResourceRef` `identifier` in the JSON is a path relative to the directory, resolved through `set_base_path` or registered explicitly with `add_resource` (see [Using `add_resource` instead of `set_base_path`](#using-add_resource-instead-of-set_base_path)).
 
 ```text
 my_ingredient/
@@ -1296,7 +1297,7 @@ my_ingredient/
   <thumbnail>.jpg          # optional: a thumbnail referenced by ingredient.json
 ```
 
-The asset itself is not in the directory: the directory holds metadata and a manifest store, not the image or video the ingredient describes. You supply the asset stream separately when adding the ingredient. `ingredient.json` holds only the ingredient fields (title, format, relationship) plus `ResourceRef` entries whose `identifier` is relative to the directory:
+The asset itself is not in the directory: the directory holds metadata and a manifest store, not the image or video the ingredient describes. You supply the asset stream separately when adding the ingredient. `ingredient.json` holds only the ingredient fields (title, format, relationship), plus `ResourceRef` entries whose `identifier` is relative to the directory:
 
 ```json
 {
@@ -1314,7 +1315,7 @@ The asset itself is not in the directory: the directory holds metadata and a man
 }
 ```
 
-Two questions pick the route: do you still have the ingredient's asset, and what does the directory hold. The asset gates the choice first, because `add_ingredient` needs an asset stream; without it you inject the ingredient into the definition instead.
+Two things decide how to re-add the ingredient: whether you still have its asset, and what the directory contains. Check the asset first — `add_ingredient` needs an asset stream, so without one you inject the ingredient straight into the definition.
 
 ```mermaid
 flowchart TD
@@ -1334,7 +1335,7 @@ flowchart TD
     Sign["builder.sign(source, output, signer)"]
 ```
 
-Two details cut across every route below. The `manifest_data` and a thumbnail resolve at different moments, which determine when you can delete the directory:
+`manifest_data` and the thumbnail resolve at different times, and that timing decides when you can delete the ingredient directory:
 
 ```mermaid
 flowchart LR
