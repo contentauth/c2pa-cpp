@@ -153,7 +153,7 @@ TEST_F(LegacyApiMigrationTest, ReadFile_WithDataDir_ExtractResources) {
 //     3. Reader(ctx, "application/c2pa", buf) reads it back, and
 //        Reader::get_resource(uri, path) writes the thumbnail / manifest_data to disk,
 //     4. Builder(ctx, {"ingredients": [...]}) + set_base_path(dir) + sign() reuses the
-//        extracted directory to sign a carrier.
+//        extracted directory to sign an asset.
 //   This is the flow the ingredient-from-file example demonstrates, and the two tests
 //   below exercise it end to end.
 // Notes: The identifier fields in the recovered ingredient JSON point at internal JUMBF
@@ -231,7 +231,7 @@ TEST_F(LegacyApiMigrationTest, ReadIngredientFile_ExtractToDirThenSignCarrier) {
     }
 
     // --- Sign phase: load the extracted ingredient from output_dir and embed it into a
-    //     carrier asset, resolving the thumbnail / manifest_data files via set_base_path.
+    //     (carrier) asset, resolving the thumbnail / manifest_data files via set_base_path.
     json sign_manifest = {{"ingredients", json::array({ingredient})}};
     auto builder = c2pa::Builder(context, sign_manifest.dump());
     builder.set_base_path(output_dir.string());
@@ -256,7 +256,7 @@ TEST_F(LegacyApiMigrationTest, ReadIngredientFile_ExtractToDirThenSignCarrier) {
 
 // Extract two ingredients from the same working store into the SAME directory
 // and confirm their thumbnail and manifest_data files do not overwrite each other, then sign
-// a carrier with both and confirm both survive the round-trip. Fixed names like
+// an asset with both and confirm both survive the round-trip. Fixed names like
 // "thumbnail.jpg" and "manifest_data.c2pa" would fail this test; instance_id-derived
 // names, which are unique per ingredient, pass it.
 TEST_F(LegacyApiMigrationTest, ReadIngredientFile_MultipleIngredientsSameStoreNoCollision) {
@@ -1124,8 +1124,8 @@ TEST_F(LegacyFolderIngredient, LegacyIngredientFolderLoadingReArchiveThenAdd) {
     json ingredient = json::parse(c2pa_test::read_text_file(folder / "ingredient.json"));
     ingredient["label"] = "ing-mig";
 
-    // Load the legacy folder via base_path with a carrier asset, then emit it in
-    // the modern archive format.
+    // Load the legacy folder via base_path with a (carrier) asset,
+    //  then emit it in the modern archive format.
     std::stringstream archive(std::ios::in | std::ios::out | std::ios::binary);
     {
         auto b = c2pa::Builder(manifest);
