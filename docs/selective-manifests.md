@@ -839,90 +839,6 @@ sink.sign(source_path, output_path, signer);
 
 The signed output contains exactly the loaded ingredient.
 
-#### Migrating from the removed read_ingredient_file
-
-The removed function `read_ingredient_file(source_path, data_dir)` read an asset, returned a formed ingredient JSON, and wrote the ingredient's binary resources (thumbnail and manifest data) to `data_dir`, so a later signing step could load that directory and embed the ingredient into a carrier. The behavior can be reimplemented with `Builder` and `Reader` objects: form the ingredient, archive it, read it back, write the resources to disk under stable non-colliding names, then reuse the directory to sign.
-
-The legacy API derived each file name from the ingredient's `instance_id` rather than a fixed name (to avoid collisions). That is what lets several ingredients share one output directory without their thumbnail or `manifest_data` files overwriting each other.
-
-```cpp
-namespace fs = std::filesystem;
-
-// Map a mime format ("image/jpeg") to a file extension,
-// and turn an instance_id into a collision-resistant filename stem.
-auto ext_for_format = [](const std::string& mime) {
-    std::string ext = mime.substr(mime.find('/') + 1);
-    return ext == "jpeg" ? std::string("jpg") : ext;
-};
-auto uuid_stem = [](const std::string& instance_id) {
-    auto colon = instance_id.rfind(':');
-    std::string stem = (colon != std::string::npos) ? instance_id.substr(colon + 1)
-                                                     : instance_id;
-    return stem.empty() ? std::string("ingredient") : stem;
-};
-
-// Extract: form the ingredient, archive just it, and write its JSON,
-// thumbnail and nested manifest_data (if any) into output_dir.
-fs::create_directories(output_dir);
-c2pa::Builder builder(context, "{}");
-builder.add_ingredient(
-    R"({"label": "my-ingredient", "title": "source.jpg", "relationship": "componentOf"})",
-    source_path);
-
-std::stringstream archive_buf(std::ios::in | std::ios::out | std::ios::binary);
-builder.write_ingredient_archive("my-ingredient", archive_buf);
-archive_buf.seekg(0);
-
-c2pa::Reader reader(context, "application/c2pa", archive_buf);
-auto store = json::parse(reader.json());
-std::string active = store["active_manifest"];
-json ingredient = store["manifests"][active]["ingredients"][0];
-
-std::string stem = uuid_stem(ingredient.value("instance_id", std::string()));
-if (ingredient.contains("thumbnail")) {
-    std::string name = stem + "." + ext_for_format(ingredient["thumbnail"]["format"]);
-    reader.get_resource(ingredient["thumbnail"]["identifier"], output_dir / name);
-    ingredient["thumbnail"]["identifier"] = name;  // rewrite to the on-disk name
-}
-if (ingredient.contains("manifest_data")) {
-    std::string name = stem + ".c2pa";
-    reader.get_resource(ingredient["manifest_data"]["identifier"], output_dir / name);
-    ingredient["manifest_data"]["identifier"] = name;
-}
-ingredient.erase("label");  // drop the archive-only assertion label before reuse
-std::ofstream(output_dir / (stem + ".json")) << ingredient.dump(2);
-
-// Reuse: load the extracted ingredient (repeat the block above per ingredient to
-// collect several) and sign a carrier, resolving resources from output_dir.
-json manifest = {{"ingredients", json::array({ingredient})}};
-c2pa::Builder sign_builder(context, manifest.dump());
-sign_builder.set_base_path(output_dir.string());  // resolves resources
-sign_builder.sign(carrier_path, output_path, signer);
-```
-
-To reproduce the full `read_ingredient_file` directory behavior for multiple ingredients, run the extract block once per source and append each resulting `ingredient` object to the `ingredients` array before signing. Deriving the file names from each ingredient's `instance_id` keeps them unique, so the extracted resources for every ingredient coexist in one directory without overwriting each other.
-
-##### Without `set_base_path`
-
-`set_base_path` is deprecated. The equivalent is to register each resource the ingredient JSON references directly on the signing builder with `add_resource`, instead of pointing the builder at a directory. Swap the sign block above for this:
-
-```cpp
-// Same extracted `ingredient` objects as above. Register every referenced resource
-// (thumbnail, and manifest_data when present) explicitly, then sign.
-c2pa::Builder sign_builder(context, manifest.dump());
-for (const auto& ingredient : ingredients) {
-    std::string thumb_id = ingredient["thumbnail"]["identifier"];
-    sign_builder.add_resource(thumb_id, output_dir / thumb_id);
-    if (ingredient.contains("manifest_data")) {
-        std::string md_id = ingredient["manifest_data"]["identifier"];
-        sign_builder.add_resource(md_id, output_dir / md_id);
-    }
-}
-sign_builder.sign(carrier_path, output_path, signer);
-```
-
-Both paths produce the same signed result: the same ingredients, with the same resources attached. Register a resource for every `identifier` the ingredient JSON references, or the sign call is missing one; `set_base_path` did this implicitly by resolving names against the directory. `add_resource` also has a stream overload, `add_resource(identifier, stream)`, if the resource is already in memory rather than on disk (see [Dedicated ingredient archive APIs](#dedicated-ingredient-archive-apis) and the `add_resource` loop in the legacy pattern below).
-
 #### Legacy: read-filter-rebuild APIs
 
 > [!NOTE]
@@ -1333,6 +1249,404 @@ for (auto& [stream, count] : archive_info) {
 builder.sign(source_path, output_path, signer);
 ```
 
+### Migrations
+
+#### Using `add_resource` instead of `set_base_path`
+
+`set_base_path` is deprecated: it carries a `@deprecated` note in the C++ header. `add_resource` is its replacement, and the two sections below use it throughout. This section explains the swap once so the recipes can refer back to it.
+
+An ingredient's JSON references its (binary) resources by `identifier` (a thumbnail, and a `manifest_data` store when present). `set_base_path(dir)` resolved every identifier implicitly, by matching each name against one directory on disk. `add_resource(identifier, path)` does the same job explicitly: one call per identifier the ingredient JSON declares, naming the file to load for it.
+
+The two produce the same signed result. Here is a `set_base_path` sign step:
+
+```cpp
+c2pa::Builder sign_builder(context, manifest.dump());
+sign_builder.set_base_path(dir.string());   // resolves every identifier by name
+sign_builder.sign(carrier_path, output_path, signer);
+```
+
+and the equivalent with `add_resource`, registering each referenced resource for every ingredient:
+
+```cpp
+c2pa::Builder sign_builder(context, manifest.dump());
+for (const auto& ingredient : ingredients) {
+    if (ingredient.contains("thumbnail")) {
+        std::string thumb_id = ingredient["thumbnail"]["identifier"];
+        sign_builder.add_resource(thumb_id, dir / thumb_id);
+    }
+    if (ingredient.contains("manifest_data")) {
+        std::string md_id = ingredient["manifest_data"]["identifier"];
+        sign_builder.add_resource(md_id, dir / md_id);
+    }
+}
+sign_builder.sign(carrier_path, output_path, signer);
+```
+
+Register a resource for every `identifier` the ingredient JSON references, or the sign call is missing one; `set_base_path` did this implicitly by resolving names against the directory. `add_resource` also has a stream overload, `add_resource(identifier, stream)`, when the resource is already in memory rather than on disk (see [Dedicated ingredient archive APIs](#dedicated-ingredient-archive-apis)).
+
+
+#### Working with ingredient directories
+
+An ingredient can live on disk as a directory: an `ingredient.json` file, an optional `manifest_data.c2pa` manifest store, and an optional thumbnail file. You may generate such a directory (see [Migrating from `read_ingredient_file`](#migrating-from-read_ingredient_file) below) or receive one from another source. Loading it onto a `Builder` instance is the same in both cases: each `ResourceRef` `identifier` in the JSON is a path relative to the directory, resolved through `set_base_path` or registered explicitly with `add_resource` (see [Using `add_resource` instead of `set_base_path`](#using-add_resource-instead-of-set_base_path)).
+
+```text
+my_ingredient/
+  ingredient.json          # ingredient metadata + resource references
+  manifest_data.c2pa       # optional: the ingredient's C2PA manifest store (a JUMBF blob)
+  <thumbnail>.jpg          # optional: a thumbnail referenced by ingredient.json
+```
+
+The asset itself is not in the directory: the directory holds metadata and a manifest store, not the image or video the ingredient describes. You supply the asset stream separately when adding the ingredient. `ingredient.json` holds only the ingredient fields (title, format, relationship) plus `ResourceRef` entries whose `identifier` is relative to the directory:
+
+```json
+{
+  "title": "C.jpg",
+  "format": "image/jpeg",
+  "relationship": "componentOf",
+  "thumbnail": {
+    "format": "image/jpeg",
+    "identifier": "self#jumbf=/c2pa/contentauth:urn:uuid:.../c2pa.thumbnail.claim.jpeg"
+  },
+  "manifest_data": {
+    "format": "application/c2pa",
+    "identifier": "manifest_data.c2pa"
+  }
+}
+```
+
+Two questions pick the route: do you still have the ingredient's asset, and what does the directory hold. The asset gates the choice first, because `add_ingredient` needs an asset stream; without it you inject the ingredient into the definition instead.
+
+```mermaid
+flowchart TD
+    Start([ingredient directory]) --> Asset{still have<br/>the asset?}
+
+    Asset -->|"yes"| Has{"directory holds what?"}
+    Asset -->|"no"| NA["inject ingredient into manifest[ingredients]<br/>fill validation_results from the store if missing<br/>add_resource(manifest_data.c2pa)<br/>(needs manifest_data.c2pa)"]
+
+    Has -->|"manifest_data.c2pa"| A["set_base_path(directory)<br/>add_ingredient(json, image/jpeg, asset)<br/>manifest_data resolved eagerly at add time"]
+    Has -->|"thumbnail only"| B["set_base_path(directory)<br/>add_ingredient(json, image/jpeg, asset)<br/>thumbnail resolved lazily at sign time"]
+    Has -->|"ingredient.json only"| J["add_ingredient(json, image/jpeg, asset)<br/>no set_base_path: nothing on disk to resolve"]
+
+    A --> Sign
+    B --> Sign
+    J --> Sign
+    NA --> Sign
+    Sign["builder.sign(source, output, signer)"]
+```
+
+Two details cut across every route below. The `manifest_data` and a thumbnail resolve at different moments, which determine when you can delete the directory:
+
+```mermaid
+flowchart LR
+    subgraph AddTime["add_ingredient (add time)"]
+        MD["manifest_data resolved eagerly:<br/>store read into the Builder now"]
+    end
+    subgraph SignTime["sign (sign time)"]
+        TH["thumbnail resolved lazily:<br/>file read from disk now"]
+    end
+    MD -->|"directory can be deleted<br/>after add_ingredient"| SafeMD([safe to delete early])
+    TH -->|"directory must survive<br/>until sign"| SafeTH([keep until sign])
+```
+
+Resources resolve through either a directory-wide `set_base_path` or a per-resource `add_resource`:
+
+```mermaid
+flowchart TD
+    Q{relative identifiers<br/>collide across directories?}
+    Q -->|"no"| BP["set_base_path(directory):<br/>one directory resolves all identifiers"]
+    Q -->|"yes, or you want no base_path"| AR["add_resource(unique id, bytes):<br/>register each resource explicitly"]
+    BP --> Note["set_base_path is @deprecated;<br/>add_resource is the forward-looking default"]
+    AR --> Note
+```
+
+##### Ingredient directory with a manifest store
+
+When `ingredient.json` declares a `manifest_data` reference to a `manifest_data.c2pa` file, that file is the ingredient's own signed C2PA manifest store, so the ingredient carries full provenance (its history, validation, and nested ingredients) into your new manifest. The `manifest_data` reference is resolved eagerly, when you call `add_ingredient`, so the directory can be deleted right after the add.
+
+Two things must work together for the SDK to reconstitute the ingredient:
+
+1. `ingredient.json` declares a `manifest_data` reference.
+2. `builder.set_base_path(directory)` is set so that reference resolves from disk.
+
+Add the ingredient through the asset branch with the ingredient's asset format (for example `"image/jpeg"`) and the asset stream the manifest binds to. Do not pass `"application/c2pa"` here: that branch expects a dedicated ingredient archive, and a bare `manifest_data.c2pa` store is rejected with `"expected an ingredient archive"`. Load the store through the base_path route instead.
+
+```cpp
+// Inputs: dir (ingredient.json + manifest_data.c2pa + the signed asset),
+//         context, manifest_json, source_asset, output_path, signer.
+std::string ing_json = read_text_file(dir / "ingredient.json");
+c2pa::Builder builder(context, manifest_json);
+
+// Point base_path at the directory so "manifest_data.c2pa" resolves.
+builder.set_base_path(dir.string());
+
+// Asset branch: real asset format + the asset stream (not "application/c2pa").
+std::ifstream asset_stream(dir / "asset.jpg", std::ios::binary);
+builder.add_ingredient(ing_json, "image/jpeg", asset_stream);
+
+builder.sign(source_asset, output_path, signer);
+```
+
+Reading the signed output back, the ingredient carries an `active_manifest`, not just metadata. Without `set_base_path`, the declared `manifest_data` reference cannot be resolved and `sign` throws `ResourceNotFound`.
+
+For many manifest-store directories, set `base_path` per directory right before adding each one. The reference resolves at add time, so the sequential override is correct even though `set_base_path` is global and last-write-wins.
+
+```cpp
+c2pa::Builder builder(context, manifest_json);
+for (const fs::path &dir : dirs) {
+    std::string ing_json = read_text_file(dir / "ingredient.json");
+    builder.set_base_path(dir.string());           // current directory
+    std::ifstream asset(dir / "asset.jpg", std::ios::binary);
+    builder.add_ingredient(ing_json, "image/jpeg", asset);
+}
+builder.sign(source_asset, output_path, signer);
+```
+
+##### Ingredient directory with a relative thumbnail only
+
+A directory with no `manifest_data.c2pa`, just `ingredient.json` and a thumbnail file, carries only metadata plus a thumbnail; the signed output has no `active_manifest`. The thumbnail is resolved lazily, at sign time, so the file must still exist on disk when you call `sign` (or you must inline it with `add_resource`).
+
+```cpp
+std::string ing_json = read_text_file(dir / "ingredient.json");
+c2pa::Builder builder(context, manifest_json);
+builder.set_base_path(dir.string());               // resolves the relative "thumb.jpg"
+
+std::ifstream asset(source_asset, std::ios::binary);
+builder.add_ingredient(ing_json, "image/jpeg", asset);
+
+builder.sign(source_asset, output_path, signer);
+```
+
+Without `set_base_path`, the relative thumbnail cannot be found and signing throws. Because a thumbnail is resolved at sign time rather than at add time, that failure surfaces at `sign`, not at `add_ingredient` (see the resolution-timing diagram in [Working with ingredient directories](#working-with-ingredient-directories)).
+
+If two thumbnail-only directories each carry a different thumbnail under the same relative name (`thumb.jpg`), one global `base_path` cannot serve both. Give each thumbnail a unique identifier and inline its bytes with `add_resource`, so neither ingredient depends on `base_path` (see [Using `add_resource` instead of `set_base_path`](#using-add_resource-instead-of-set_base_path)).
+
+```cpp
+c2pa::Builder builder(context, manifest_json);
+
+json ing_a = json::parse(read_text_file(dir_a / "ingredient.json"));
+json ing_c = json::parse(read_text_file(dir_c / "ingredient.json"));
+ing_a["thumbnail"]["identifier"] = "thumb_a.jpg";
+ing_c["thumbnail"]["identifier"] = "thumb_c.jpg";
+
+std::ifstream ta(dir_a / "thumb.jpg", std::ios::binary);
+std::ifstream tc(dir_c / "thumb.jpg", std::ios::binary);
+builder.add_resource("thumb_a.jpg", ta);
+builder.add_resource("thumb_c.jpg", tc);
+
+std::ifstream s1(source_asset, std::ios::binary);
+std::ifstream s2(source_asset, std::ios::binary);
+builder.add_ingredient(ing_a.dump(), "image/jpeg", s1);
+builder.add_ingredient(ing_c.dump(), "image/jpeg", s2);
+
+builder.sign(source_asset, output_path, signer);
+```
+
+##### Ingredient directory with ingredient.json only
+
+If a directory has neither a `manifest_data.c2pa` nor a thumbnail, just `ingredient.json`, there is nothing on disk to resolve, so `set_base_path` is not needed. Add the ingredient from your asset stream as plain metadata. The signed ingredient has its `title` and `relationship` but no `active_manifest`, because there was no prior manifest to carry.
+
+```cpp
+std::string ing_json = read_text_file(dir / "ingredient.json");
+c2pa::Builder builder(context, manifest_json);
+// No set_base_path: the JSON references no files.
+std::ifstream asset(source_asset, std::ios::binary);
+builder.add_ingredient(ing_json, "image/jpeg", asset);
+builder.sign(source_asset, output_path, signer);
+```
+
+##### Loading an ingredient directory without using an asset stream
+
+When the original ingredient asset is gone, skip `add_ingredient`, place the ingredient in the manifest definition, and supply its manifest store with `add_resource`. This is the read-filter-rebuild pattern, and it works from the directory's two files alone: `ingredient.json` and `manifest_data.c2pa`.
+
+The one field the definition-injection route depends on is `validation_results`. Some `ingredient.json` files already carry it and some do not. When it is absent, signing is rejected with `"Encoding: unable to encode assertion data"`, because the `add_ingredient` route derives the field from the loaded store plus the asset stream while the definition-injection route has no such step. Check whether the parsed JSON already has `validation_results`: if it does, inject it as-is; if it does not, read the store once with a `Reader` and copy its `validation_results` into the ingredient. Either way, transfer the same store bytes with `add_resource`.
+
+```cpp
+namespace fs = std::filesystem;
+fs::path dir = /* the ingredient directory */;
+
+// 1. Ingredient fields from the directory's ingredient.json.
+json ingredient = json::parse(read_text_file(dir / "ingredient.json"));
+
+// 2. Fill validation_results only when the ingredient.json lacks it. Some
+//    directories already carry the field; read it from the store otherwise.
+if (!ingredient.contains("validation_results")) {
+    std::ifstream store_in(dir / "manifest_data.c2pa", std::ios::binary);
+    c2pa::Reader store_reader(context, "application/c2pa", store_in);
+    json store_parsed = json::parse(store_reader.json());
+    ingredient["validation_results"] = store_parsed["validation_results"];
+}
+
+// 3. Assemble the injectable ingredient JSON.
+ingredient["manifest_data"] = {
+    {"format", "application/c2pa"},
+    {"identifier", "manifest_data.c2pa"},
+};
+
+// 4. Inject into the definition.
+json manifest = json::parse(manifest_json);
+manifest["ingredients"] = json::array({ingredient});
+c2pa::Builder builder(context, manifest.dump());
+
+// 5. Carry the store bytes under the matching identifier.
+std::ifstream store_res(dir / "manifest_data.c2pa", std::ios::binary);
+builder.add_resource("manifest_data.c2pa", store_res);
+
+// 6. Sign.
+builder.sign(source_asset, output_path, signer);
+```
+
+The signed ingredient carries an `active_manifest`. Because the store was validated without its asset, its `validation_results` reports an `assertion.dataHash.mismatch`, the state to carry forward (since the original asset is gone). For several no-asset directories, give each directory's `manifest_data` a distinct identifier (`add_resource` identifiers are global to the Builder), and keep each stream alive until `sign` returns.
+
+##### Mixing an ingredient directory with a modern archive
+
+Directory ingredients and modern dedicated ingredient archives can be added to the same Builder in any order. Every `add_ingredient*` method appends to the same internal ingredient list; there is no version gate.
+
+```cpp
+c2pa::Builder builder(context, manifest_json);
+
+// Directory ingredient (manifest store on disk).
+std::string dir_json = read_text_file(dir / "ingredient.json");
+builder.set_base_path(dir.string());
+std::ifstream asset_stream(dir / "asset.jpg", std::ios::binary);
+builder.add_ingredient(dir_json, "image/jpeg", asset_stream);
+
+// Modern dedicated ingredient archive.
+archive.seekg(0);
+builder.add_ingredient_from_archive(archive);
+
+builder.sign(source_asset, output_path, signer);
+```
+
+When the asset is gone, swap the `add_ingredient` + `set_base_path` step for the [no-asset route](#loading-an-ingredient-directory-without-using-an-asset-stream) above and still add the modern archive with `add_ingredient_from_archive`.
+
+##### Re-archiving an ingredient directory into the modern `.c2pa` format
+
+The on-disk directory format is awkward to carry around: multiple files, on-disk relative references, a Builder-global `base_path`. If you still have the ingredients, convert each one to a modern dedicated ingredient archive once, then use only the archives. Loading a directory and calling `write_ingredient_archive` produces that archive, which bundles the manifest store and no longer depends on `base_path` or on the asset file.
+
+```cpp
+void migrate_directory_to_archive(const c2pa::Context &context,
+                                  const fs::path &dir,
+                                  const fs::path &archive_out,
+                                  const std::string &manifest_json) {
+    c2pa::Builder b(context, manifest_json);
+    std::string ing_json = read_text_file(dir / "ingredient.json");
+    b.set_base_path(dir.string());
+    std::ifstream asset(dir / "asset.jpg", std::ios::binary);
+    b.add_ingredient(ing_json, "image/jpeg", asset);
+
+    std::ofstream out(archive_out, std::ios::binary);
+    b.write_ingredient_archive("ing-mig", out);       // label from ingredient.json
+    // The directory is now redundant; it can be deleted.
+}
+
+// Later, on any builder, with the directory long gone:
+void use_migrated_archive(c2pa::Builder &builder, const fs::path &archive_in) {
+    std::ifstream in(archive_in, std::ios::binary);
+    builder.add_ingredient_from_archive(in);
+}
+```
+
+Give each ingredient a `"label"` in its JSON so you can name it in `write_ingredient_archive`. When the original asset is gone, migrate through the [no-asset route](#loading-an-ingredient-directory-without-using-an-asset-stream) first, then call `write_ingredient_archive` on that ingredient; the migrated `validation_results` records the same hard-binding mismatch that comes from validating a store without its asset.
+
+##### Pitfalls
+
+The Builder does not de-duplicate ingredients. This applies to every `add_ingredient*` route, not just directories: adding the same ingredient N times, whether by asset path, asset stream, directory, or archive, produces N ingredients in the signed manifest. The Builder never merges or skips a repeat, so guard against double-adds in your own code.
+
+A `manifest_data` reference that resolves but points at corrupt bytes fails at `sign`, not at `add_ingredient`, and with a different message than a missing reference. A missing or unresolved reference throws `ResourceNotFound` (for example when `set_base_path` is not set); a resolvable but corrupt `manifest_data.c2pa` throws `"Verify: invalid JUMBF header"`. Both surface at `sign` rather than at `add_ingredient` time, so validate a store before relying on it.
+
+##### Linking a directory ingredient to an action
+
+A directory ingredient links to an action the same way any other ingredient does: through `parameters.ingredientIds` on the action, matched against the ingredient's `label` first and its `instance_id` as a fallback (see [Linking actions to ingredients](#linking-actions-to-ingredients) for the full resolution rules).
+
+Give the `ingredient.json` a `label`, reference that same string in the action's `ingredientIds`, and after signing the action's resolved `ingredients[].url` points at the ingredient assertion (`self#jumbf=.../c2pa.ingredient.*`).
+
+Note that some `ingredient.json` files may already carry an `instance_id` (read from the asset's XMP, or written during an earlier extraction), so an ingredient can arrive with an `instance_id` even before you add a `label`.
+
+When an ingredient carries both a `label` and an `instance_id`, the `label` takes precedence. The SDK checks each `ingredientIds` value against labels before instance_ids, so a value that matches a `label` resolves to that ingredient even if some other ingredient has a matching `instance_id`. The `instance_id` is consulted only for an id that matches no label.
+
+The `label` used for linking is not preserved verbatim on the ingredient after signing. The SDK consumes it as the linking (identifying) key and rewrites it to the ingredient assertion's own label: reading the signed output back, the ingredient's `label` is an SDK-assigned label, not the string that was assigned in the `label` value. An explicit `instance_id`, by contrast, stays in the ingredient data unchanged. So if you need a stable, caller-controlled identifier that survives signing and round-trips, use `instance_id`. Use `label` to identify the link itself before signing: a label identifies a link of an ingredient to an action, but is not a stable ingredient-only identifier.
+
+```cpp
+// ingredient.json declares the label the action will reference:
+//   { "title": "...", "relationship": "parentOf", "label": "dir-parent",
+//     "manifest_data": { "format": "application/c2pa", "identifier": "manifest_data.c2pa" } }
+
+// The signing manifest's c2pa.actions assertion references that label:
+//   { "action": "c2pa.opened", "parameters": { "ingredientIds": ["dir-parent"] } }
+
+builder.set_base_path(dir.string());
+std::ifstream asset(dir / "asset.jpg", std::ios::binary);
+builder.add_ingredient(dir_json, "image/jpeg", asset);
+builder.sign(source_asset, output_path, signer);
+```
+
+An unknown id in `ingredientIds` is rejected at sign with `"Action ingredientId not found"`.
+
+#### Migrating from `read_ingredient_file`
+
+The deprecated and removed function `read_ingredient_file(source_path, data_dir)` read an asset, returned a fully formed ingredient JSON, and wrote the ingredient's binary resources (thumbnail and manifest data) to `data_dir`, so a later signing step could load that directory and embed the ingredient. The behavior can be reimplemented with `Builder` and `Reader` objects: form the ingredient, archive it, read it back, write the resources to disk under stable non-colliding names, then reuse the directory on a Builder to sign.
+
+The legacy API derived each file name from the ingredient's `instance_id` rather than a fixed name (to avoid collisions). That is what lets several ingredients share one output directory without their thumbnail or `manifest_data` files overwriting each other.
+
+```cpp
+namespace fs = std::filesystem;
+
+// Map a mime format ("image/jpeg") to a file extension,
+// and turn an instance_id into a collision-resistant filename stem.
+auto ext_for_format = [](const std::string& mime) {
+    std::string ext = mime.substr(mime.find('/') + 1);
+    return ext == "jpeg" ? std::string("jpg") : ext;
+};
+auto uuid_stem = [](const std::string& instance_id) {
+    auto colon = instance_id.rfind(':');
+    std::string stem = (colon != std::string::npos) ? instance_id.substr(colon + 1)
+                                                     : instance_id;
+    return stem.empty() ? std::string("ingredient") : stem;
+};
+
+// Extract: form the ingredient, archive just it, and write its JSON,
+// thumbnail and nested manifest_data (if any) into output_dir.
+fs::create_directories(output_dir);
+c2pa::Builder builder(context, "{}");
+builder.add_ingredient(
+    R"({"label": "my-ingredient", "title": "source.jpg", "relationship": "componentOf"})",
+    source_path);
+
+std::stringstream archive_buf(std::ios::in | std::ios::out | std::ios::binary);
+builder.write_ingredient_archive("my-ingredient", archive_buf);
+archive_buf.seekg(0);
+
+c2pa::Reader reader(context, "application/c2pa", archive_buf);
+auto store = json::parse(reader.json());
+std::string active = store["active_manifest"];
+json ingredient = store["manifests"][active]["ingredients"][0];
+
+std::string stem = uuid_stem(ingredient.value("instance_id", std::string()));
+if (ingredient.contains("thumbnail")) {
+    std::string name = stem + "." + ext_for_format(ingredient["thumbnail"]["format"]);
+    reader.get_resource(ingredient["thumbnail"]["identifier"], output_dir / name);
+    ingredient["thumbnail"]["identifier"] = name;  // rewrite to the on-disk name
+}
+if (ingredient.contains("manifest_data")) {
+    std::string name = stem + ".c2pa";
+    reader.get_resource(ingredient["manifest_data"]["identifier"], output_dir / name);
+    ingredient["manifest_data"]["identifier"] = name;
+}
+ingredient.erase("label");  // drop the archive-only assertion label before reuse
+std::ofstream(output_dir / (stem + ".json")) << ingredient.dump(2);
+
+// Reuse: load the extracted ingredient (repeat the block above per ingredient to
+// collect several) and sign a carrier, resolving resources from output_dir.
+json manifest = {{"ingredients", json::array({ingredient})}};
+c2pa::Builder sign_builder(context, manifest.dump());
+sign_builder.set_base_path(output_dir.string());  // resolves resources
+sign_builder.sign(carrier_path, output_path, signer);
+```
+
+To reproduce the full `read_ingredient_file` directory behavior for multiple ingredients, run the extract block once per source and append each resulting `ingredient` object to the `ingredients` array before signing. Deriving the file names from each ingredient's `instance_id` keeps them unique, so the extracted resources for every ingredient coexist in one directory without overwriting each other. To sign without `set_base_path` (deprecated), register each resource with `add_resource` instead (see [Using `add_resource` instead of `set_base_path`](#using-add_resource-instead-of-set_base_path)); to load a directory you received rather than generated, see [Working with ingredient directories](#working-with-ingredient-directories).
+
+An ingredient formed through `add_ingredient` from an asset stream or path always has an `instance_id`: the SDK takes the asset's XMP `instanceID` when present, otherwise it synthesizes one of the form `xmp:iid:<uuid>`. The stem helper splits on the last colon, so both the XMP form (`xmp.iid:<uuid>`) and the synthesized form yield the UUID. Two edge cases justify the `"ingredient"` fallback in `uuid_stem`: a synthesized `instance_id` is random, so it is unique within a run but not stable across runs; and an ingredient built directly with the v2 constructor, without passing an asset stream, has no `instance_id` at all and omits the field. Set an explicit `instance_id` (or a `label`) when you need a stable, caller-controlled name.
+
 ## Retrieving actions from a working store
 
 Actions are stored in the `c2pa.actions.v2` assertion. Use `Reader` to extract them from a signed asset or an archived Builder.
@@ -1389,8 +1703,6 @@ flowchart TD
     style M5 fill:#eee,stroke:#999,stroke-dasharray: 5 5
 ```
 
-
-
 Not every ingredient has provenance. An unsigned asset added as an ingredient has `title`, `format`, and `relationship`, but no `manifest_data` and no entry in the `"manifests"` dictionary. Walking the tree reveals the full provenance chain: what each actor did at each step, including actions performed and ingredients used.
 
 **To walk the tree and find actions at each level:**
@@ -1442,7 +1754,7 @@ for (auto& ingredient : active_manifest["ingredients"]) {
 }
 ```
 
-## Filtering actions 
+## Filtering actions
 
 To remove actions, use the same read–filter–rebuild pattern: **read, pick the ones to keep, create a new Builder**.
 
