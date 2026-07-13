@@ -146,8 +146,8 @@ TEST_F(LegacyApiMigrationTest, ReadFile_WithDataDir_ExtractResources) {
 // What it did: read an asset, returned the formed ingredient JSON string, and
 //   wrote the ingredient's binary resources (thumbnail, and any manifest data) to
 //   data_dir.
-// Current API: there is no single-call replacement, but the behavior is a short
-//   reimplementation on top of Builder/Reader:
+// Current API: there is no single-call replacement, but the behavior can be
+//   reimplemented on top of Builder/Reader:
 //     1. add_ingredient(json, source_path) forms the ingredient in a working store,
 //     2. write_ingredient_archive(id, buf) archives just that ingredient,
 //     3. Reader(ctx, "application/c2pa", buf) reads it back, and
@@ -706,17 +706,23 @@ protected:
         return parsed["manifests"][active]["ingredients"];
     }
 
-    // Build a self-contained legacy Case-A folder (ingredient.json declaring a
-    // manifest_data ref + manifest_data.c2pa + the signed asset it binds to) and
-    // add it to `builder` via the documented Case-A route. Returns nothing; the
-    // ingredient is appended to the builder.
-    void add_legacy_caseA(c2pa::Builder &builder, const std::string &name,
-                          const std::string &title) {
+    // Build a self-contained legacy folder (ingredient.json declaring a
+    // manifest_data ref + manifest_data.c2pa + the signed asset it binds to) on
+    // a throwaway builder, archive it, and merge it into `builder` via
+    // add_ingredient_from_archive. Keeping set_base_path scoped to the
+    // throwaway builder (rather than calling it on the shared `builder`)
+    // matters: base_path is retained as builder-level state, and merging an
+    // archive into a builder that has it set routes the archive's resources
+    // through a disk-write path keyed on their raw (colon-bearing) JUMBF URIs,
+    // which fails on Windows. See docs/faqs or the migration plan for detail.
+    void add_legacy_folder_ingredient(c2pa::Builder &builder, const std::string &name,
+                                      const std::string &title, const std::string &label) {
         auto seed = sign_seed(c2pa_test::get_fixture_path("A.jpg"), name);
         json ing = {
             {"title", title},
             {"format", "image/jpeg"},
             {"relationship", "componentOf"},
+            {"label", label},
             {"manifest_data",
              {{"format", "application/c2pa"}, {"identifier", "manifest_data.c2pa"}}},
         };
@@ -724,9 +730,18 @@ protected:
         fs::copy_file(seed.signed_asset, folder / "asset.jpg",
                       fs::copy_options::overwrite_existing);
         std::string ing_json = c2pa_test::read_text_file(folder / "ingredient.json");
-        builder.set_base_path(folder.string());
-        std::ifstream asset_stream(folder / "asset.jpg", std::ios::binary);
-        ASSERT_NO_THROW(builder.add_ingredient(ing_json, "image/jpeg", asset_stream));
+
+        auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+        std::stringstream archive(std::ios::in | std::ios::out | std::ios::binary);
+        {
+            auto scoped = c2pa::Builder(manifest);
+            scoped.set_base_path(folder.string());
+            std::ifstream asset_stream(folder / "asset.jpg", std::ios::binary);
+            ASSERT_NO_THROW(scoped.add_ingredient(ing_json, "image/jpeg", asset_stream));
+            scoped.write_ingredient_archive(label, archive);
+        }
+        archive.seekg(0);
+        ASSERT_NO_THROW(builder.add_ingredient_from_archive(archive));
     }
 
     // Build a modern dedicated ingredient archive from a fixture asset and add it
@@ -969,20 +984,11 @@ TEST_F(LegacyFolderIngredient, MixLegacyAndModernArchiveOnOneBuilder) {
     auto src = c2pa_test::get_fixture_path("A.jpg");
     auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
 
-    // Legacy folder ingredient (Case A): manifest_data.c2pa + signed asset.
-    auto seed = sign_seed(c2pa_test::get_fixture_path("A.jpg"), "mix-legacy");
-    json legacy_ing = {
-        {"title", "legacy ingredient"},
-        {"format", "image/jpeg"},
-        {"relationship", "parentOf"},
-        {"manifest_data",
-         {{"format", "application/c2pa"}, {"identifier", "manifest_data.c2pa"}}},
-    };
-    fs::path folder =
-        write_legacy_folder("mix-legacy", legacy_ing, &seed.manifest_bytes, nullptr, "");
-    fs::copy_file(seed.signed_asset, folder / "asset.jpg",
-                  fs::copy_options::overwrite_existing);
-    std::string legacy_json = c2pa_test::read_text_file(folder / "ingredient.json");
+    // One builder, both routes: neither route calls set_base_path on `builder`
+    // itself, since add_ingredient_from_archive merges resources into whatever
+    // base_path state the receiving builder already carries.
+    auto builder = c2pa::Builder(manifest);
+    add_legacy_folder_ingredient(builder, "mix-legacy", "legacy ingredient", "legacy-mix");
 
     // Modern dedicated ingredient archive built from C.jpg.
     std::stringstream archive(std::ios::in | std::ios::out | std::ios::binary);
@@ -993,12 +999,6 @@ TEST_F(LegacyFolderIngredient, MixLegacyAndModernArchiveOnOneBuilder) {
             c2pa_test::get_fixture_path("C.jpg"));
         ab.write_ingredient_archive("ing-modern", archive);
     }
-
-    // One builder, both routes.
-    auto builder = c2pa::Builder(manifest);
-    builder.set_base_path(folder.string());
-    std::ifstream asset_stream(folder / "asset.jpg", std::ios::binary);
-    ASSERT_NO_THROW(builder.add_ingredient(legacy_json, "image/jpeg", asset_stream));
     archive.seekg(0);
     ASSERT_NO_THROW(builder.add_ingredient_from_archive(archive));
 
@@ -1015,9 +1015,9 @@ TEST_F(LegacyFolderIngredient, MixMultipleLegacyAndOneModern) {
     auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
 
     auto builder = c2pa::Builder(manifest);
-    add_legacy_caseA(builder, "m1-legacy-a", "legacy A");
-    add_legacy_caseA(builder, "m1-legacy-b", "legacy B");
-    add_legacy_caseA(builder, "m1-legacy-c", "legacy C");
+    add_legacy_folder_ingredient(builder, "m1-legacy-a", "legacy A", "legacy-m1-a");
+    add_legacy_folder_ingredient(builder, "m1-legacy-b", "legacy B", "legacy-m1-b");
+    add_legacy_folder_ingredient(builder, "m1-legacy-c", "legacy C", "legacy-m1-c");
     auto a1 = add_modern_archive(builder, manifest, "ing-modern", "modern X",
                                  c2pa_test::get_fixture_path("C.jpg"));
 
@@ -1032,8 +1032,8 @@ TEST_F(LegacyFolderIngredient, MixMultipleLegacyAndMultipleModern) {
     auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
 
     auto builder = c2pa::Builder(manifest);
-    add_legacy_caseA(builder, "m2-legacy-a", "legacy A");
-    add_legacy_caseA(builder, "m2-legacy-b", "legacy B");
+    add_legacy_folder_ingredient(builder, "m2-legacy-a", "legacy A", "legacy-m2-a");
+    add_legacy_folder_ingredient(builder, "m2-legacy-b", "legacy B", "legacy-m2-b");
     auto a1 = add_modern_archive(builder, manifest, "ing-modern-1", "modern X",
                                  c2pa_test::get_fixture_path("C.jpg"));
     auto a2 = add_modern_archive(builder, manifest, "ing-modern-2", "modern Y",
