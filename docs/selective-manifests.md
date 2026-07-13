@@ -147,7 +147,7 @@ builder.sign(source_path, output_path, signer);
 
 ### Start fresh and preserve provenance
 
-Sometimes you need to discard all existing assertions and ingredients while still keeping the provenance chain. Do this by creating a new `Builder` with a new manifest definition and adding the original signed asset as an ingredient using `add_ingredient()`.
+Sometimes all existing assertions and ingredients must be discarded while the provenance chain is kept. This is done by creating a new `Builder` with a new manifest definition and adding the original signed asset as an ingredient using `add_ingredient()`.
 
 The function `add_ingredient()` does not copy the original's assertions into the new manifest. Instead, it stores the original's entire manifest store as opaque binary data inside the ingredient record. This means:
 
@@ -428,7 +428,7 @@ Use `label` when defining manifests in JSON. Use `instance_id` when working prog
 
 ## Working with archives
 
-A `Builder` represents a **working store**: a manifest that is being assembled but has not yet been signed. Archives serialize this working store (definition + resources) to a `.c2pa` binary format, so you can save, transfer, or resume the work later. For more background on working stores and archives, see [Working stores](https://opensource.contentauthenticity.org/docs/rust-sdk/docs/working-stores).
+A `Builder` represents a **working store**: a manifest that is being assembled but has not yet been signed. Archives serialize this working store (definition + resources) to a `.c2pa` binary format, so the work can be saved, transferred, or resumed later. For more background on working stores and archives, see [Working stores](https://opensource.contentauthenticity.org/docs/rust-sdk/docs/working-stores).
 
 There are two distinct types of archives, sharing the same binary format but being conceptually different: builder archives and ingredient archives.
 
@@ -1315,7 +1315,7 @@ The asset itself is not in the directory: the directory holds metadata and a man
 }
 ```
 
-Two things decide how to re-add the ingredient: whether you still have its asset, and what the directory contains. Check the asset first — `add_ingredient` needs an asset stream, so without one you inject the ingredient straight into the definition.
+Two things decide how to re-add the ingredient: whether its asset is still available, and what the directory contains. The asset is checked first — `add_ingredient` needs an asset stream, so without one the ingredient is injected straight into the definition.
 
 ```mermaid
 flowchart TD
@@ -1335,7 +1335,7 @@ flowchart TD
     Sign["builder.sign(source, output, signer)"]
 ```
 
-`manifest_data` and the thumbnail resolve at different times, and that timing decides when you can delete the ingredient directory:
+`manifest_data` and the thumbnail resolve at different times, and that timing decides when the ingredient directory can be deleted:
 
 ```mermaid
 flowchart LR
@@ -1646,7 +1646,7 @@ sign_builder.sign(carrier_path, output_path, signer);
 
 To reproduce the full `read_ingredient_file` directory behavior for multiple ingredients, run the extract block once per source and append each resulting `ingredient` object to the `ingredients` array before signing. Deriving the file names from each ingredient's `instance_id` keeps them unique, so the extracted resources for every ingredient coexist in one directory without overwriting each other. To sign without `set_base_path` (deprecated), register each resource with `add_resource` instead (see [Using `add_resource` instead of `set_base_path`](#using-add_resource-instead-of-set_base_path)); to load a directory you received rather than generated, see [Working with ingredient directories](#working-with-ingredient-directories).
 
-An ingredient formed through `add_ingredient` from an asset stream or path always has an `instance_id`: the SDK takes the asset's XMP `instanceID` when present, otherwise it synthesizes one of the form `xmp:iid:<uuid>`. The stem helper splits on the last colon, so both the XMP form (`xmp.iid:<uuid>`) and the synthesized form yield the UUID. Two edge cases justify the `"ingredient"` fallback in `uuid_stem`: a synthesized `instance_id` is random, so it is unique within a run but not stable across runs; and an ingredient built directly with the v2 constructor, without passing an asset stream, has no `instance_id` at all and omits the field. Set an explicit `instance_id` (or a `label`) when you need a stable, caller-controlled name.
+An ingredient formed through `add_ingredient` from an asset stream or path always usually has an `instance_id`: the SDK takes the asset's XMP `instanceID` when present, otherwise it synthesizes one of the form `xmp:iid:<uuid>`. The stem helper splits on the last colon, so both the XMP form (`xmp.iid:<uuid>`) and the synthesized form yield the UUID. Two edge cases justify the `"ingredient"` fallback in `uuid_stem`: a synthesized `instance_id` is random, so it is unique within a run but not stable across runs; and an ingredient built directly with the v2 constructor, without passing an asset stream, has no `instance_id` at all and omits the field. Set an explicit `instance_id` (or a `label`) when you need a stable, caller-controlled name.
 
 ## Retrieving actions from a working store
 
