@@ -55,11 +55,15 @@ namespace c2pa
         }
 
         // Update reader with stream.
-        // Note: c2pa_reader_with_stream consumes the reader pointer.
+        // On success c2pa_reader_with_stream consumes the reader.
+        // On error it can be retained and we need to free explicitly
+        // (c2pa_free handles verifying free is possible).
         C2paReader* updated = c2pa_reader_with_stream(c2pa_reader, format.c_str(), cpp_stream->c_stream);
-        c2pa_reader = nullptr;
         if (updated == nullptr) {
-            throw C2paException();
+            C2paException ex;      // owns the error message before we free
+            c2pa_free(c2pa_reader);
+            c2pa_reader = nullptr;
+            throw ex;
         }
         c2pa_reader = updated;
     }
@@ -89,11 +93,15 @@ namespace c2pa
             throw C2paException("Failed to create reader from context");
         }
 
-        // Note: c2pa_reader_with_stream consumes the reader pointer.
+        // On success c2pa_reader_with_stream consumes the reader.
+        // On error it can be retained and we need to free explicitly
+        // (c2pa_free handles verifying free is possible).
         C2paReader* updated = c2pa_reader_with_stream(c2pa_reader, extension.c_str(), cpp_stream->c_stream);
-        c2pa_reader = nullptr;
         if (updated == nullptr) {
-            throw C2paException();
+            C2paException ex;
+            c2pa_free(c2pa_reader);
+            c2pa_reader = nullptr;
+            throw ex;
         }
         c2pa_reader = updated;
     }
@@ -118,16 +126,20 @@ namespace c2pa
             throw C2paException("Failed to create reader from context");
         }
 
-        // c2pa_reader_with_manifest_data_and_stream always consumes c2pa_reader.
+        // On success this consumes c2pa_reader.
+        // On error it can be retained and we need to free explicitly
+        // (c2pa_free handles verifying free is possible).
         C2paReader* updated = c2pa_reader_with_manifest_data_and_stream(
             c2pa_reader,
             format.c_str(),
             cpp_stream->c_stream,
             manifest_jumbf.data(),
             manifest_jumbf.size());
-        c2pa_reader = nullptr;
         if (updated == nullptr) {
-            throw C2paException();
+            C2paException ex;
+            c2pa_free(c2pa_reader);
+            c2pa_reader = nullptr;
+            throw ex;
         }
         c2pa_reader = updated;
 
@@ -187,16 +199,19 @@ namespace c2pa
         CppIStream main_wrapper(stream);
         CppIStream fragment_wrapper(fragment);
 
-        // c2pa_reader_with_fragment consumes the existing reader and returns a new one.
-        // *this is returned for chaining so reading can go through all segments.
+        // On success c2pa_reader_with_fragment consumes the existing reader and returns a new one.
+        // On error it can be retained and we need to free explicitly
+        // (c2pa_free handles verifying free is possible).
         C2paReader* updated = c2pa_reader_with_fragment(
             c2pa_reader,
             format.c_str(),
             main_wrapper.c_stream,
             fragment_wrapper.c_stream);
-        c2pa_reader = nullptr;
         if (updated == nullptr) {
-            throw C2paException();
+            C2paException ex;
+            c2pa_free(c2pa_reader);
+            c2pa_reader = nullptr;
+            throw ex;
         }
         c2pa_reader = updated;
 

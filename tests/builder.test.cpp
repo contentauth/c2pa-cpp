@@ -7278,3 +7278,27 @@ TEST_F(BuilderTest, ArchiveToFstreamBackedCppOStream) {
 
     EXPECT_GT(std::filesystem::file_size(archive_path), 0u);
 }
+
+// A malformed archive makes c2pa_builder_with_archive fail.
+// The wrapper must throw and free the retained builder.
+TEST(BuilderErrorHandling, FromArchiveMalformedThrows)
+{
+    std::stringstream bad_archive(std::ios::in | std::ios::out | std::ios::binary);
+    bad_archive << "not a valid c2pa archive";
+    bad_archive.seekg(0);
+
+    EXPECT_THROW(c2pa::Builder::from_archive(bad_archive), c2pa::C2paException);
+}
+
+TEST(BuilderErrorHandling, WithArchiveMalformedThrows)
+{
+    auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+    auto context = c2pa::Context();
+    auto builder = c2pa::Builder(context, manifest);
+
+    std::stringstream bad_archive(std::ios::in | std::ios::out | std::ios::binary);
+    bad_archive << "not a valid c2pa archive";
+    bad_archive.seekg(0);
+
+    EXPECT_THROW(builder.with_archive(bad_archive), c2pa::C2paException);
+}

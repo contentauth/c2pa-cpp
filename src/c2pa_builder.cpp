@@ -116,11 +116,18 @@ namespace c2pa
             throw C2paException();
         }
 
-        builder = c2pa_builder_with_archive(base, c_archive.c_stream);
-        base = nullptr;
-        if (builder == nullptr) {
-            throw C2paException();
+        // On success this consumes base, on error base is retained.
+        // On error it can be retained and we need to free explicitly
+        // (c2pa_free handles verifying free is possible).
+        C2paBuilder* result = c2pa_builder_with_archive(base, c_archive.c_stream);
+        if (result == nullptr) {
+            C2paException ex;
+            c2pa_free(base);
+            base = nullptr;
+            throw ex;
         }
+        builder = result;
+        base = nullptr;
     }
 
     Builder::~Builder()
@@ -332,11 +339,15 @@ namespace c2pa
     {
         CppIStream c_archive(archive);
 
-        // c2pa_builder_with_archive consumes the builder pointer and returns a new one
+        // On success this consumes the builder and returns a new one.
+        // On error it can be retained and we need to free explicitly
+        // (c2pa_free handles verifying free is possible).
         C2paBuilder* updated = c2pa_builder_with_archive(builder, c_archive.c_stream);
-        builder = nullptr;
         if (updated == nullptr) {
-            throw C2paException();
+            C2paException ex;
+            c2pa_free(builder);
+            builder = nullptr;
+            throw ex;
         }
         builder = updated;
         return *this;
