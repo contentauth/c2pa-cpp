@@ -7,7 +7,7 @@ The [c2pa-cpp repository](https://github.com/contentauth/c2pa-cpp) implements C+
 Although this library works for plain C applications, the documentation assumes you're using C++, since that's most common for modern applications.
 
 <div class="hide-doxygen" >
-<div style={{display: 'none'}}>
+<div class="github-only">
 
 For the best experience, read the docs on the [CAI Open Source SDK documentation website](https://opensource.contentauthenticity.org/docs/c2pa-c).
 

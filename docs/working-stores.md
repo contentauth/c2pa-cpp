@@ -1282,7 +1282,7 @@ const std::string ingredient_json = R"({
 builder.add_ingredient(ingredient_json, "original.jpg");
 builder.sign("edited.jpg", "signed.jpg", signer);
 ```
-<div style={{display: 'none'}}>
+<div class="github-only">
 
 ## Additional resources
 
