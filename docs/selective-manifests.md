@@ -539,6 +539,9 @@ auto signing_builder = c2pa::Builder(context, R"({
         "label": "c2pa.actions.v2",
         "data": {
             "actions": [{
+                "action": "c2pa.created",
+                "digitalSourceType": "http://c2pa.org/digitalsourcetype/empty"
+            }, {
                 "action": "c2pa.placed",
                 "parameters": {
                     "ingredientIds": ["catalog:ingredient-A", "catalog:ingredient-B", "catalog:ingredient-C"]

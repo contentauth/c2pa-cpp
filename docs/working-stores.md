@@ -545,6 +545,9 @@ auto signing_manifest = R"({
         "label": "c2pa.actions.v2",
         "data": {
             "actions": [{
+                "action": "c2pa.created",
+                "digitalSourceType": "http://c2pa.org/digitalsourcetype/empty"
+            }, {
                 "action": "c2pa.placed",
                 "parameters": {
                     "ingredientIds": ["my-ingredient"]
@@ -595,6 +598,9 @@ auto manifest_json = R"({
         "label": "c2pa.actions.v2",
         "data": {
             "actions": [{
+                "action": "c2pa.created",
+                "digitalSourceType": "http://c2pa.org/digitalsourcetype/empty"
+            }, {
                 "action": "c2pa.placed",
                 "parameters": {
                     "ingredientIds": ["my-ingredient"]
@@ -674,6 +680,9 @@ auto manifest_json = R"({
         "label": "c2pa.actions.v2",
         "data": {
             "actions": [{
+                "action": "c2pa.created",
+                "digitalSourceType": "http://c2pa.org/digitalsourcetype/empty"
+            }, {
                 "action": "c2pa.placed",
                 "parameters": {
                     "ingredientIds": ["base-layer", "overlay-layer"]
@@ -1057,7 +1066,9 @@ auto signing_manifest = R"({
     "claim_generator_info": [{"name": "app", "version": "1.0"}],
     "assertions": [{
         "label": "c2pa.actions.v2",
-        "data": {"actions": [{"action": "c2pa.placed",
+        "data": {"actions": [
+            {"action": "c2pa.created", "digitalSourceType": "http://c2pa.org/digitalsourcetype/empty"},
+            {"action": "c2pa.placed",
             "parameters": {"ingredientIds": ["catalog:photo-A"]}}]}
     }]
 })";
@@ -1094,7 +1105,9 @@ auto signing_manifest = R"({
     "claim_generator_info": [{"name": "app", "version": "1.0"}],
     "assertions": [{
         "label": "c2pa.actions.v2",
-        "data": {"actions": [{"action": "c2pa.placed",
+        "data": {"actions": [
+            {"action": "c2pa.created", "digitalSourceType": "http://c2pa.org/digitalsourcetype/empty"},
+            {"action": "c2pa.placed",
             "parameters": {"ingredientIds": ["my-photo"]}}]}
     }]
 })";
@@ -1133,7 +1146,9 @@ auto signing_manifest = R"({
     "claim_generator_info": [{"name": "app", "version": "1.0"}],
     "assertions": [{
         "label": "c2pa.actions.v2",
-        "data": {"actions": [{"action": "c2pa.placed",
+        "data": {"actions": [
+            {"action": "c2pa.created", "digitalSourceType": "http://c2pa.org/digitalsourcetype/empty"},
+            {"action": "c2pa.placed",
             "parameters": {"ingredientIds": ["my-photo"]}}]}
     }]
 })";
