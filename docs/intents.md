@@ -1,12 +1,12 @@
 # Using Builder intents
 
-_Intents_ enable validation, add required actions that are required by the C2PA specification, and help prevent invalid operations when using a `Builder`. Intents are about the operation (create, edit, update) executed on the source asset.
+_Intents_ enable validation, add actions required by the C2PA specification, and help prevent invalid operations when using a `Builder`. Intents are about the operation (create, edit, or update) executed on the source asset.
 
 ## Why use intents?
 
 Without intents, you have to manually construct the correct manifest structure: adding the required actions (`c2pa.created` or `c2pa.opened` as the first action per the specification), setting digital source types, managing ingredients, and linking actions to ingredients. Getting any of this wrong produces a non-compliant manifest.
 
-With intents, the caller declares *what is being done* and `Builder` handles the rest.
+With intents, the caller declares *what to do* and `Builder` handles the rest.
 
 For example, without intents you have to manually wire up actions and make sure ingredients are properly linked to actions. This is especially important for `parentOf` ingredient relationships with the `c2pa.opened` action.
 
@@ -88,9 +88,9 @@ for (const auto& path : image_paths) {
 }
 ```
 
-### Using `set_intent` on Builder
+### Using set_intent on Builder
 
-Call `set_intent` directly on a `Builder` instance for one-off operations or when the intent is determined at runtime. For example:
+Call `set_intent` directly on a `Builder` instance for one-off operations or when you determine the intent at runtime. For example:
 
 ```cpp
 c2pa::Context context;
@@ -101,8 +101,8 @@ builder.sign(source_path, output_path, signer);
 
 ### Intent precedence
 
-When an intent is configured in multiple places, the most specific setting takes precedence.
-If `set_intent` is called on a `Builder` instance, it takes precedence over all other sources.
+When you configure an intent in multiple places, the most specific setting takes precedence.
+Calling `set_intent` on a `Builder` instance takes precedence over all other sources.
 
 ```mermaid
 flowchart TD
@@ -162,11 +162,11 @@ flowchart LR
     end
 ```
 
-For `Edit` and `Update` intents, `Builder` looks at the source stream, and if no `parentOf` ingredient has been added manually, it automatically creates one from that stream (and adds the needed action). The source stream *becomes* the parent ingredient. If a `parentOf` ingredient has already been added manually (via `add_ingredient`), `Builder` uses that one instead and does not automatically create one from the source.
+For `Edit` and `Update` intents, `Builder` looks at the source stream. If the caller has not manually added a `parentOf` ingredient, `Builder` automatically creates one from that stream (and adds the needed action). The source stream *becomes* the parent ingredient. If the caller has already manually added a `parentOf` ingredient (via `add_ingredient`), `Builder` uses that one instead and does not automatically create one from the source.
 
-### How intent relates to `add_ingredient`
+### How intent relates to add_ingredient
 
-The `Builder` intent controls what the Builder does with the source stream (source asset) at sign time. The `add_ingredient` method adds other ingredients explicitly. These are separate concerns.
+The `Builder` intent controls what `Builder` does with the source stream (source asset) at sign time. The `add_ingredient` method adds other ingredients explicitly. These are separate concerns.
 
 ```mermaid
 flowchart TD
@@ -205,9 +205,9 @@ The `C2paBuilderIntent` and `C2paDigitalSourceType` enums are available through 
 
 Enum values are in the global namespace:
 - `C2paBuilderIntent`: Create, Edit, or Update
-- `C2paDigitalSourceType`: Empty, DigitalCapture, TrainedAlgorithmicMedia, and so on...
+- `C2paDigitalSourceType`: Empty, DigitalCapture, TrainedAlgorithmicMedia, and so on.
 
-### Using `set_intent`
+### Using set_intent
 
 Use the `Builder` [`set_intent`](https://contentauth.github.io/c2pa-cpp/da/db7/classc2pa_1_1Builder.html#ac3ca980a43f44c9349ac0d6de50a088c) method to specify the intent:
 
@@ -220,7 +220,7 @@ void Builder::set_intent(
 
 Where:
 - `intent` is one of the [intent types](#intent-types).
-- `digital_source_type` is one of the [`C2paDigitalSourceType` values](#c2padigitalsourcetype) values that describes how the asset was made.  Required for the `Create` intent.  Defaults to `Empty`. 
+- `digital_source_type` is one of the [`C2paDigitalSourceType` values](#c2padigitalsourcetype) that describe how the asset was made. Required for the `Create` intent. Defaults to `Empty`.
 
 
 ### Intent types
@@ -229,9 +229,9 @@ Intent types can be any `C2paBuilderIntent` values:
 
 | Intent   | Operation | Parent ingredient  | Auto-generated action  |
 |----------|-----------|--------------------|------------------------|
-| `Create` | Brand-new content | Must NOT have one. | `c2pa.created` |
-| `Edit`   | Modifying existing content| Automatically created from the source stream if not provided   | `c2pa.opened` (linked to parent) |
-| `Update` | Metadata-only changes | Automatically created from the source stream if not provided.  | `c2pa.opened` (linked to parent) |
+| `Create` | Brand-new content | Must *not* have one | `c2pa.created` |
+| `Edit`   | Modifying existing content | Automatically created from the source stream if not provided | `c2pa.opened` (linked to parent) |
+| `Update` | Metadata-only changes | Automatically created from the source stream if not provided | `c2pa.opened` (linked to parent) |
 
 ### C2paDigitalSourceType
 
@@ -277,7 +277,7 @@ flowchart TD
 
 ## Create intent
 
-Use the `Create` intent when the asset has no prior history. A `C2paDigitalSourceType` is required to describe how the asset was produced.  `Builder` will:
+Use the `Create` intent when the asset has no prior history. Specify a `C2paDigitalSourceType` to describe how the asset was produced. `Builder` will:
 
 - Add a `c2pa.created` action with the specified digital source type.
 - Reject the operation if a `parentOf` ingredient exists.
@@ -351,9 +351,9 @@ builder.sign(source_path, output_path, signer);
 
 ## Edit intent
 
-Use the `Edit` intent when an existing asset is modified. With this intent, `Builder`:
+Use the `Edit` intent when you modify an existing asset. With this intent, `Builder`:
 
-1. Checks if a `parentOf` ingredient has already been added. If not, it automatically creates one from the source stream passed to `sign()`.
+1. Checks whether the caller has already added a `parentOf` ingredient. If not, it automatically creates one from the source stream passed to `sign()`.
 2. Adds a `c2pa.opened` action linked to the parent ingredient.
 
 No `digital_source_type` parameter is needed.
@@ -455,13 +455,13 @@ builder.sign("original.jpg", "composite.jpg", signer);
 
 ## Update intent
 
-Use the `Update` intent for metadata-only changes where the asset content itself is not modified. This is a restricted form of the `Edit` intent that:
+Use the `Update` intent for metadata-only changes, where the asset content itself does not change. This is a restricted form of the `Edit` intent that:
 
 - Allows exactly one ingredient (the parent).
 - Does not allow changes to the parent's hashed content.
 - Produces a more compact manifest than `Edit`.
 
-As with `Edit` intent, `Builder` automatically creates a parent ingredient from the source stream if one is not provided.
+As with the `Edit` intent, `Builder` automatically creates a parent ingredient from the source stream if the caller has not provided one.
 
 ### Example: Adding metadata to a signed asset
 

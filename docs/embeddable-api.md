@@ -1,9 +1,9 @@
-# Embeddable Signing API
+# Embeddable signing API
 
 > [!WARNING]
-> The embeddable signing API is for advanced use cases that require fine-grained, low-level control over manifest embedding. The standard `Builder::sign()` method handles the full signing and embedding pipeline automatically and is the recommended approach for most use cases. The embeddable API should only be used when the application needs to manage the embedding process directly. With this level of control comes additional responsibility: callers must ensure that each step is performed correctly and in the right order.
+> The embeddable signing API is for advanced use cases that require fine-grained, low-level control over manifest embedding. The standard `Builder::sign()` method handles the full signing and embedding pipeline automatically and is the recommended approach for most use cases. Use the embeddable API only when the application needs to manage the embedding process directly. With this level of control comes additional responsibility: callers must ensure they perform each step correctly and in the right order.
 
-The embeddable signing API provides direct, fine-grained control over how a C2PA manifest is embedded into an asset. Instead of letting the SDK manage everything by providing both the source and destination to `Builder::sign()`, the caller performs each step explicitly, in the following order:
+The embeddable signing API provides direct, fine-grained control over embedding a C2PA manifest into an asset. Instead of letting the SDK manage everything by providing both the source and destination to `Builder::sign()`, the caller performs each step explicitly, in the following order:
 
 1. Create a placeholder.
 2. Embed the placeholder into the asset.
@@ -41,10 +41,10 @@ The embeddable API supports these hard-binding strategies, selected automaticall
 | [BoxHash](#using-boxhash-directly) | `BoxHash` | JPEG, PNG, GIF, WebP, and others | No | `prefer_box_hash` is `true` |
 -->
 
-Call `needs_placeholder()` on the `Builder` to decide which workflow to follow. It returns `true` when the format requires a placeholder step (DataHash or BmffHash) and `false` when the format supports BoxHash<!-- and `prefer_box_hash` is enabled in the settings -->.
+Call `needs_placeholder()` on the `Builder` to decide which workflow to follow. It returns `true` when the format requires a placeholder step (`DataHash` or `BmffHash`) and `false` when the format supports `BoxHash`<!-- and `prefer_box_hash` is enabled in the settings -->.
 
 > [!NOTE]
-> The same format can require a placeholder or not, depending on the hashing strategy. For example, `needs_placeholder("image/jpeg")` returns `true` by default (DataHash). <!-- but returns `false` when `prefer_box_hash` is enabled (BoxHash).--> Always call `needs_placeholder()` rather than assuming based on format alone.
+> The same format can require a placeholder or not, depending on the hashing strategy. For example, `needs_placeholder("image/jpeg")` returns `true` by default (`DataHash`). <!-- but returns `false` when `prefer_box_hash` is enabled (BoxHash).--> Always call `needs_placeholder()` rather than assuming based on format alone.
 
 Use the following decision tree to select the correct workflow. 
 
@@ -80,7 +80,7 @@ When `needs_placeholder()` returns `false`, the standard `Builder::sign()` flow 
 
 - The application controls its own write pipeline (e.g., a video transcoder or streaming ingest service) and wants to hash the asset during its own write pass rather than having the SDK re-read the finished file.
 - The application needs to receive the raw signed manifest bytes and decide where and how to append them as a new chunk, rather than letting the SDK write to a destination path.
-- The asset is being produced incrementally, so the application can pass the stream to `update_hash_from_stream()` at the right moment, then call `sign_embeddable()` to get the manifest without a second full read.
+- The application produces the asset incrementally, so it can pass the stream to `update_hash_from_stream()` at the right moment, then call `sign_embeddable()` to get the manifest without a second full read.
 
 <!-- 
 The `prefer_box_hash` setting can be provided in a JSON settings file:
@@ -110,16 +110,16 @@ auto context = c2pa::Context::ContextBuilder()
 
 ### Placeholder sizing
 
-When a placeholder is required, the SDK pre-sizes the JUMBF manifest based on its current state and records the target length internally. After signing, `sign_embeddable()` pads the compressed manifest to exactly that length so the caller can overwrite the placeholder bytes without shifting any other data in the file.
+When the format requires a placeholder, the SDK pre-sizes the JUMBF manifest based on its current state and records the target length internally. After signing, `sign_embeddable()` pads the compressed manifest to exactly that length so the caller can overwrite the placeholder bytes without shifting any other data in the file.
 
 ### Signer on Context
 
-Unlike `Builder::sign()` where a `Signer` is passed explicitly, the embeddable APIs obtain the signer (and its reserve size) from the Builder's Context. The signer must be attached when building the Context.
+Unlike `Builder::sign()` where a `Signer` is passed explicitly, the embeddable APIs obtain the signer (and its reserve size) from the `Builder`'s `Context`. The signer must be attached when building the `Context`.
 
 > [!IMPORTANT]
 > The embeddable APIs require the **signer to be attached to the Context** via `Context::ContextBuilder::with_signer()` or through a signer configuration in the JSON settings. Calling `placeholder()` or `sign_embeddable()` without a signer on the Context will throw a `C2paException`.
 
-There are two ways to attach a signer to the Context:
+There are two ways to attach a signer to the `Context`:
 - [Programmatically via ContextBuilder](#attaching-a-signer-programmatically-via-contextbuilder)
 - [Via JSON settings](#attaching-signer-via-json-settings)
 
@@ -141,7 +141,7 @@ auto builder = c2pa::Builder(context, manifest_json);
 > [!NOTE]
 > `with_signer()` consumes the `Signer` via move semantics. The `Signer` object is no longer valid after this call and must not be used after it has been moved.
 
-#### Attaching signer via JSON settings:
+#### Attaching signer via JSON settings
 
 The signer can also be configured in a JSON settings file or string. The following skeleton shows the structure; replace the placeholder values with actual PEM-encoded certificates and keys:
 
@@ -157,7 +157,7 @@ The signer can also be configured in a JSON settings file or string. The followi
 }
 ```
 
-Then load the settings into a Context:
+Then load the settings into a `Context`:
 
 ```cpp
 // From a JSON settings file
@@ -176,7 +176,7 @@ All methods listed below are called on a `Builder` instance.
 
 ### Workflow selection
 
-Use `Builder::needs_placeholder(format)` to determine if the asset format requires a pre-embedded placeholder before hashing. It always returns `true` for BMFF formats and `false` if <!-- `prefer_box_hash` is enabled and the format supports `BoxHash`, or  when --> a `BoxHash` assertion has already been added.  
+Use `Builder::needs_placeholder(format)` to determine if the asset format requires a pre-embedded placeholder before hashing. It always returns `true` for BMFF formats and `false` if <!-- `prefer_box_hash` is enabled and the format supports `BoxHash`, or  when --> the caller has already added a `BoxHash` assertion.
 
 ### Signing and embedding
 
@@ -187,7 +187,7 @@ These methods perform the signing workflow: placeholder creation, hashing, and s
 | `Builder::placeholder(format)` | Composes a placeholder manifest and returns it as format-specific bytes ready to embed (e.g., JPEG APP11 segments). Automatically adds the appropriate hash assertion (`BmffHash` for BMFF formats, `DataHash` for others). Stores the JUMBF length internally so `sign_embeddable()` can pad to the same size. |
 | `Builder::set_data_hash_exclusions(exclusions)` | Replaces the dummy exclusion ranges in the `DataHash` assertion with the actual byte offset and length of the embedded placeholder. Call after embedding placeholder bytes and before `update_hash_from_stream()`. Takes a `std::vector<std::pair<uint64_t, uint64_t>>` of (start, length) pairs. |
 | `Builder::update_hash_from_stream(format, stream)` | Reads the asset stream and computes the hard-binding hash. Automatically selects the appropriate path based on format: `BmffHash` for BMFF (skips manifest box), `BoxHash` for chunk-based formats (creates assertion if needed), or `DataHash` (skips exclusion ranges). Takes a `std::istream&`. |
-| `Builder::sign_embeddable(format)` | Signs the manifest and returns bytes ready to embed. For placeholder workflows, the output is padded to match the placeholder size for in-place patching. For BoxHash workflows, the output is the actual signed manifest size (not padded), suitable for appending as a new chunk. |
+| `Builder::sign_embeddable(format)` | Signs the manifest and returns bytes ready to embed. For placeholder workflows, it pads the output to match the placeholder size for in-place patching. For BoxHash workflows, the output is the actual signed manifest size (not padded), suitable for appending as a new chunk. |
 
 ## Using the DataHash placeholder
 
@@ -220,8 +220,8 @@ auto context = c2pa::Context::ContextBuilder()
 
  -->
 
- > [!IMPORTANT]
-> The embeddable APIs require the **Signer to be attached to the Context** via `Context::ContextBuilder::with_signer()` or through a signer configuration in the JSON settings. Calling `placeholder()` or `sign_embeddable()` without a signer on the Context will throw a `C2paException`.
+> [!IMPORTANT]
+> The embeddable APIs require the **signer to be attached to the Context** via `Context::ContextBuilder::with_signer()` or through a signer configuration in the JSON settings. Calling `placeholder()` or `sign_embeddable()` without a signer on the Context will throw a `C2paException`.
 
 ### DataHash flow
 
@@ -315,14 +315,14 @@ if (builder.needs_placeholder("image/jpeg")) {
 
 ## Using the BmffHash placeholder
 
-Use this workflow with BMFF (ISO Base Media File Format) formats (like MP4), which always require a placeholder. <!-- The `prefer_box_hash` setting has no effect on BMFF formats: -->  They always use `BmffHash` regardless of the setting. Therefore, no special Builder settings are required as the SDK selects `BmffHash` automatically based on the format.
+Use this workflow with BMFF (ISO Base Media File Format) formats (like MP4), which always require a placeholder. <!-- The `prefer_box_hash` setting has no effect on BMFF formats: -->  They always use `BmffHash` regardless of the setting. Therefore, no special `Builder` settings are required as the SDK selects `BmffHash` automatically based on the format.
 
 BMFF containers store media data in `mdat` (media data) boxes, which hold the raw audio, video, and other media samples. The SDK uses a `BmffHash` assertion for BMFF formats that excludes the manifest UUID box when computing the asset hash.
 
 The `placeholder()` method creates a `BmffHash` assertion with a placeholder hash and default exclusions. After embedding the placeholder, call `update_hash_from_stream()` to read and hash the asset, then `sign_embeddable()` to produce a signed manifest of the same size as the placeholder for in-place patching.
 
 > [!IMPORTANT]
-> The embeddable APIs require the **Signer to be attached to the Context** via `Context::ContextBuilder::with_signer()` or through a signer configuration in the JSON settings. Calling `placeholder()` or `sign_embeddable()` without a signer on the Context will throw a `C2paException`.
+> The embeddable APIs require the **signer to be attached to the Context** via `Context::ContextBuilder::with_signer()` or through a signer configuration in the JSON settings. Calling `placeholder()` or `sign_embeddable()` without a signer on the Context will throw a `C2paException`.
 
 ### BmffHash flow
 
@@ -505,7 +505,7 @@ auto manifest_bytes = builder.sign_embeddable("image/jpeg");
 
 ## Class relationships
 
-This is a partial class diagram showing only the classes and methods relevant to the embeddable APIs. For the full API reference, see the [c2pa.hpp](../include/c2pa.hpp) header file.
+This is a partial class diagram showing only the classes and methods relevant to the embeddable APIs. For the full API reference, see the [`c2pa.hpp`](../include/c2pa.hpp) header file.
 
 ```mermaid
 classDiagram
