@@ -232,7 +232,16 @@ TEST_F(LegacyApiMigrationTest, ReadIngredientFile_ExtractToDirThenSignCarrier) {
 
     // --- Sign phase: load the extracted ingredient from output_dir and embed it into a
     //     (carrier) asset, resolving the thumbnail / manifest_data files via set_base_path.
-    json sign_manifest = {{"ingredients", json::array({ingredient})}};
+    json sign_manifest = {
+        {"ingredients", json::array({ingredient})},
+        {"assertions", json::array({
+            {{"label", "c2pa.actions"},
+             {"data", {{"actions", json::array({
+                 {{"action", "c2pa.created"},
+                  {"digitalSourceType", "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCreation"}},
+             })}}}},
+        })},
+    };
     auto builder = c2pa::Builder(context, sign_manifest.dump());
     builder.set_base_path(output_dir.string());
 
@@ -342,7 +351,16 @@ TEST_F(LegacyApiMigrationTest, ReadIngredientFile_MultipleIngredientsSameStoreNo
     EXPECT_EQ(c2pa_count, 1u);
 
     // Sign an asset with both extracted ingredients, resolving resources from the dir.
-    json sign_manifest = {{"ingredients", extracted}};
+    json sign_manifest = {
+        {"ingredients", extracted},
+        {"assertions", json::array({
+            {{"label", "c2pa.actions"},
+             {"data", {{"actions", json::array({
+                 {{"action", "c2pa.created"},
+                  {"digitalSourceType", "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCreation"}},
+             })}}}},
+        })},
+    };
     auto sign_builder = c2pa::Builder(context, sign_manifest.dump());
     sign_builder.set_base_path(output_dir.string());
 
@@ -456,8 +474,20 @@ TEST_F(LegacyApiMigrationTest, ReadIngredientFile_AddResourceMatchesSetBasePath)
 
     auto signer = c2pa_test::create_test_signer();
 
+    // A signed manifest must carry a valid first action (verify-after-sign, c2pa-rs #2277).
+    json sign_manifest = {
+        {"ingredients", extracted},
+        {"assertions", json::array({
+            {{"label", "c2pa.actions"},
+             {"data", {{"actions", json::array({
+                 {{"action", "c2pa.created"},
+                  {"digitalSourceType", "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCreation"}},
+             })}}}},
+        })},
+    };
+
     // --- Sign path A: set_base_path resolves resources against the directory.
-    auto builder_a = c2pa::Builder(context, json{{"ingredients", extracted}}.dump());
+    auto builder_a = c2pa::Builder(context, sign_manifest.dump());
     builder_a.set_base_path(output_dir.string());
     auto out_a = get_temp_path("read_ingredient_addresource_a.jpg");
     std::vector<unsigned char> md_a;
@@ -465,7 +495,7 @@ TEST_F(LegacyApiMigrationTest, ReadIngredientFile_AddResourceMatchesSetBasePath)
     EXPECT_FALSE(md_a.empty());
 
     // --- Sign path B: no set_base_path; register every referenced resource explicitly.
-    auto builder_b = c2pa::Builder(context, json{{"ingredients", extracted}}.dump());
+    auto builder_b = c2pa::Builder(context, sign_manifest.dump());
     for (const auto& ing : extracted) {
         std::string thumb_id = ing["thumbnail"]["identifier"];
         builder_b.add_resource(thumb_id, output_dir / thumb_id);
@@ -1438,6 +1468,8 @@ TEST_F(LegacyFolderIngredient, LinkComponentOfToPlaced) {
         {"assertions", json::array({
             {{"label", "c2pa.actions"},
              {"data", {{"actions", json::array({
+                 {{"action", "c2pa.created"},
+                  {"digitalSourceType", "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCreation"}},
                  {{"action", "c2pa.placed"},
                   {"parameters", {{"ingredientIds", json::array({"dir-comp"})}}}},
              })}}}},
@@ -1497,6 +1529,8 @@ TEST_F(LegacyFolderIngredient, LinkInputToToEdited) {
         {"assertions", json::array({
             {{"label", "c2pa.actions"},
              {"data", {{"actions", json::array({
+                 {{"action", "c2pa.created"},
+                  {"digitalSourceType", "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCreation"}},
                  {{"action", "c2pa.edited"},
                   {"parameters", {{"ingredientIds", json::array({"dir-input"})}}}},
              })}}}},
@@ -1562,6 +1596,8 @@ TEST_F(LegacyFolderIngredient, LabelNotPreservedButInstanceIdIs) {
         {"assertions", json::array({
             {{"label", "c2pa.actions"},
              {"data", {{"actions", json::array({
+                 {{"action", "c2pa.created"},
+                  {"digitalSourceType", "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCreation"}},
                  {{"action", "c2pa.placed"},
                   {"parameters", {{"ingredientIds", json::array({my_label})}}}},
              })}}}},

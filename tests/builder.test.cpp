@@ -94,7 +94,16 @@ protected:
         builder.to_archive(archive_path);
     }
 
-    // Helper: Builds a manifest JSON with one action that references one ingredient for linking.
+    // Helper: Builds a manifest JSON with one action that references one ingredient for linking,
+    // with valid c2pa.created first action, used to prefix inline signing manifests.
+    json created_first_action()
+    {
+        return {
+            {"action", "c2pa.created"},
+            {"digitalSourceType", "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCreation"}
+        };
+    }
+
     json make_manifest_with_action(const std::string& action_name,
                                    const std::string& linking_key,
                                    const std::string& digital_source_type = "")
@@ -105,12 +114,22 @@ protected:
         }
         action_obj["parameters"] = {{"ingredientIds", json::array({linking_key})}};
 
+        // A signed manifest must start with a c2pa.created or c2pa.opened action
+        json actions = json::array();
+        if (action_name != "c2pa.created" && action_name != "c2pa.opened") {
+            actions.push_back({
+                {"action", "c2pa.created"},
+                {"digitalSourceType", "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCreation"}
+            });
+        }
+        actions.push_back(action_obj);
+
         return {
             {"claim_generator_info", json::array({{{"name", "c2pa-test"}, {"version", "1.0"}}})},
             {"assertions", json::array({
                 {
                     {"label", "c2pa.actions.v2"},
-                    {"data", {{"actions", json::array({action_obj})}}}
+                    {"data", {{"actions", actions}}}
                 }
             })}
         };
@@ -2969,6 +2988,8 @@ TEST_F(BuilderTest, LoadArchiveWithContext)
         builder2.to_archive(archive_stream);  // Load an archive into the builder
     });
 
+    builder2.add_action(R"({"action": "c2pa.created", "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCreation"})");
+
     // Sign with the restored builder (which has thumbnail=false from context2)
     auto signer = c2pa_test::create_test_signer();
 
@@ -5003,6 +5024,7 @@ TEST_F(BuilderTest, LinkArchiveTwoIngredientsUsingLabels)
             {
                 {"label", "c2pa.actions.v2"},
                 {"data", {{"actions", json::array({
+                    created_first_action(),
                     {
                         {"action", "c2pa.placed"},
                         {"parameters", {{"ingredientIds", json::array({"ingredient-for-placed"})}}}
@@ -5079,6 +5101,7 @@ TEST_F(BuilderTest, LinkArchiveMultipleIngredientsInOnePlacedAction)
             {
                 {"label", "c2pa.actions.v2"},
                 {"data", {{"actions", json::array({
+                    created_first_action(),
                     {
                         {"action", "c2pa.placed"},
                         {"parameters", {{"ingredientIds", json::array({"base-layer", "overlay-layer"})}}}
@@ -5749,7 +5772,7 @@ TEST_F(BuilderTest, NonAsciiPathForReaderGetResource)
     const std::string manifest = R"({
         "claim_generator_info": [{"name": "c2pa-c test NonAsciiPathForReaderGetResource", "version": "0.1.0"}],
         "thumbnail": {"format": "image/jpeg", "identifier": "thumbnail"},
-        "assertions": [{"label": "c2pa.actions", "data": {"actions": [{"action": "c2pa.created"}]}}]
+        "assertions": [{"label": "c2pa.actions", "data": {"actions": [{"action": "c2pa.created", "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCreation"}]}}]
     })";
     auto signer = c2pa_test::create_test_signer();
     {
@@ -6379,8 +6402,10 @@ TEST_F(BuilderTest, LinkIngredientArchiveComponentOfPlacedUsingArchiveApi)
 TEST_F(BuilderTest, LinkIngredientArchiveToBothOpenedAndPlacedUsingArchiveApi)
 {
     auto settings = c2pa::Settings();
-    // builder.generate_c2pa_archive has become default
-// settings.set("builder.generate_c2pa_archive", "true");
+    // This test deliberately links one parentOf ingredient to both c2pa.opened and c2pa.placed.
+    // A single ingredient cannot satisfy both parentOf and componentOf relationships at once, and
+    // verify-after-sign rejects it. This test verifies the ingredient is linked with the setting disabled.
+    settings.set("verify.verify_after_sign", "false");
     auto context = c2pa::Context::ContextBuilder()
         .with_settings(std::move(settings))
         .create_context();
@@ -6452,6 +6477,187 @@ TEST_F(BuilderTest, LinkIngredientArchiveToBothOpenedAndPlacedUsingArchiveApi)
     std::string placed_url = placed_action["parameters"]["ingredients"][0]["url"];
     EXPECT_EQ(opened_url, placed_url) << "Both actions should link the same ingredient archive";
     EXPECT_EQ(opened_url, "self#jumbf=c2pa.assertions/c2pa.ingredient.v3");
+}
+
+TEST_F(BuilderTest, LinkIngredientArchiveTwoRelationshipsOpenedParentPlacedComponent)
+{
+    auto context = c2pa::Context::ContextBuilder().create_context();
+    auto manifest_str = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+
+    // Producer archive #1: ingredient added as parentOf.
+    auto producer_parent = c2pa::Builder(context, manifest_str);
+    producer_parent.add_ingredient(
+        json({{"title", "photo.jpg"}, {"relationship", "parentOf"}, {"label", "opened-ingredient"}}).dump(),
+        c2pa_test::get_fixture_path("A.jpg"));
+    std::stringstream parent_stream(std::ios::in | std::ios::out | std::ios::binary);
+    ASSERT_NO_THROW(producer_parent.write_ingredient_archive("opened-ingredient", parent_stream));
+
+    // Producer archive #2: same asset, ingredient kept as componentOf.
+    auto producer_component = c2pa::Builder(context, manifest_str);
+    producer_component.add_ingredient(
+        json({{"title", "photo.jpg"}, {"relationship", "componentOf"}, {"label", "placed-ingredient"}}).dump(),
+        c2pa_test::get_fixture_path("A.jpg"));
+    std::stringstream component_stream(std::ios::in | std::ios::out | std::ios::binary);
+    ASSERT_NO_THROW(producer_component.write_ingredient_archive("placed-ingredient", component_stream));
+
+    // Signing builder: opened links the parentOf archive, placed links the componentOf archive.
+    json manifest_json = {
+        {"claim_generator_info", json::array({{{"name", "c2pa-test"}, {"version", "1.0"}}})},
+        {"assertions", json::array({
+            {
+                {"label", "c2pa.actions.v2"},
+                {"data", {{"actions", json::array({
+                    {
+                        {"action", "c2pa.opened"},
+                        {"digitalSourceType", "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCreation"},
+                        {"parameters", {{"ingredientIds", json::array({"opened-ingredient"})}}}
+                    },
+                    {
+                        {"action", "c2pa.placed"},
+                        {"parameters", {{"ingredientIds", json::array({"placed-ingredient"})}}}
+                    }
+                })}}}
+            }
+        })}
+    };
+
+    auto signing_builder = c2pa::Builder(context, manifest_json.dump());
+    parent_stream.seekg(0);
+    ASSERT_NO_THROW(signing_builder.add_ingredient_from_archive(parent_stream));
+    component_stream.seekg(0);
+    ASSERT_NO_THROW(signing_builder.add_ingredient_from_archive(component_stream));
+
+    auto signer = c2pa_test::create_test_signer();
+    auto output_path = get_temp_path("link_archive_two_relationships_opened_placed.jpg");
+    ASSERT_NO_THROW(signing_builder.sign(c2pa_test::get_fixture_path("A.jpg"), output_path, signer));
+
+    auto reader = c2pa::Reader(context, output_path);
+    auto parsed = json::parse(reader.json());
+    std::string active = parsed["active_manifest"];
+    auto& manifest = parsed["manifests"][active];
+
+    auto& ingredients = manifest["ingredients"];
+    ASSERT_EQ(ingredients.size(), 2u);
+    bool found_parent = false, found_component = false;
+    for (auto& ing : ingredients) {
+        if (ing["relationship"] == "parentOf") found_parent = true;
+        if (ing["relationship"] == "componentOf") found_component = true;
+    }
+    EXPECT_TRUE(found_parent) << "parentOf ingredient (opened archive) should be present";
+    EXPECT_TRUE(found_component)
+        << "componentOf ingredient (placed archive, relationship overridden) should be present";
+
+    // Both actions present, each linking a single ingredient.
+    json opened_action, placed_action;
+    bool found_opened = false, found_placed = false;
+    for (auto& assertion : manifest["assertions"]) {
+        if (assertion["label"] != "c2pa.actions.v2") continue;
+        for (auto& action : assertion["data"]["actions"]) {
+            if (action["action"] == "c2pa.opened") { opened_action = action; found_opened = true; }
+            if (action["action"] == "c2pa.placed") { placed_action = action; found_placed = true; }
+        }
+    }
+    ASSERT_TRUE(found_opened) << "c2pa.opened action not found";
+    ASSERT_TRUE(found_placed) << "c2pa.placed action not found";
+
+    ASSERT_TRUE(opened_action["parameters"].contains("ingredients"));
+    ASSERT_TRUE(placed_action["parameters"].contains("ingredients"));
+    ASSERT_EQ(opened_action["parameters"]["ingredients"].size(), 1u);
+    ASSERT_EQ(placed_action["parameters"]["ingredients"].size(), 1u);
+
+    // The two actions link different ingredient archives.
+    std::string opened_url = opened_action["parameters"]["ingredients"][0]["url"];
+    std::string placed_url = placed_action["parameters"]["ingredients"][0]["url"];
+    EXPECT_NE(opened_url, placed_url);
+}
+
+// Single ingredient archive, relationship decided at the moment it is added to the signing builder.
+TEST_F(BuilderTest, LinkIngredientArchiveRelationshipOverriddenAtAddTime)
+{
+    auto context = c2pa::Context::ContextBuilder().create_context();
+    auto manifest_str = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+
+    auto producer = c2pa::Builder(context, manifest_str);
+    producer.add_ingredient(
+        json({{"title", "photo.jpg"}, {"relationship", "componentOf"}, {"label", "shared-ingredient"}}).dump(),
+        c2pa_test::get_fixture_path("A.jpg"));
+    std::stringstream archive(std::ios::in | std::ios::out | std::ios::binary);
+    ASSERT_NO_THROW(producer.write_ingredient_archive("shared-ingredient", archive));
+
+    json manifest_json = {
+        {"claim_generator_info", json::array({{{"name", "c2pa-test"}, {"version", "1.0"}}})},
+        {"assertions", json::array({
+            {
+                {"label", "c2pa.actions.v2"},
+                {"data", {{"actions", json::array({
+                    {
+                        {"action", "c2pa.opened"},
+                        {"digitalSourceType", "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCreation"},
+                        {"parameters", {{"ingredientIds", json::array({"opened-ingredient"})}}}
+                    },
+                    {
+                        {"action", "c2pa.placed"},
+                        {"parameters", {{"ingredientIds", json::array({"placed-ingredient"})}}}
+                    }
+                })}}}
+            }
+        })}
+    };
+
+    auto signing_builder = c2pa::Builder(context, manifest_json.dump());
+
+    // Add the same archive, overriding the relationship at add time
+    archive.seekg(0);
+    ASSERT_NO_THROW(signing_builder.add_ingredient(
+        json({{"relationship", "parentOf"}, {"label", "opened-ingredient"}}).dump(),
+        "application/c2pa", archive));
+
+    archive.seekg(0);
+    ASSERT_NO_THROW(signing_builder.add_ingredient(
+        json({{"relationship", "componentOf"}, {"label", "placed-ingredient"}}).dump(),
+        "application/c2pa", archive));
+
+    auto signer = c2pa_test::create_test_signer();
+    auto output_path = get_temp_path("link_archive_relationship_override_at_add.jpg");
+    ASSERT_NO_THROW(signing_builder.sign(c2pa_test::get_fixture_path("A.jpg"), output_path, signer));
+
+    auto reader = c2pa::Reader(context, output_path);
+    auto parsed = json::parse(reader.json());
+    std::string active = parsed["active_manifest"];
+    auto& manifest = parsed["manifests"][active];
+
+    // Both overridden relationships are present, from the single source archive.
+    auto& ingredients = manifest["ingredients"];
+    ASSERT_EQ(ingredients.size(), 2u);
+    bool found_parent = false, found_component = false;
+    for (auto& ing : ingredients) {
+        if (ing["relationship"] == "parentOf") found_parent = true;
+        if (ing["relationship"] == "componentOf") found_component = true;
+    }
+    EXPECT_TRUE(found_parent) << "relationship overridden to parentOf at add time";
+    EXPECT_TRUE(found_component) << "relationship overridden to componentOf at add time";
+
+    json opened_action, placed_action;
+    bool found_opened = false, found_placed = false;
+    for (auto& assertion : manifest["assertions"]) {
+        if (assertion["label"] != "c2pa.actions.v2") continue;
+        for (auto& action : assertion["data"]["actions"]) {
+            if (action["action"] == "c2pa.opened") { opened_action = action; found_opened = true; }
+            if (action["action"] == "c2pa.placed") { placed_action = action; found_placed = true; }
+        }
+    }
+    ASSERT_TRUE(found_opened) << "c2pa.opened action not found";
+    ASSERT_TRUE(found_placed) << "c2pa.placed action not found";
+
+    ASSERT_TRUE(opened_action["parameters"].contains("ingredients"));
+    ASSERT_TRUE(placed_action["parameters"].contains("ingredients"));
+    ASSERT_EQ(opened_action["parameters"]["ingredients"].size(), 1u);
+    ASSERT_EQ(placed_action["parameters"]["ingredients"].size(), 1u);
+
+    std::string opened_url = opened_action["parameters"]["ingredients"][0]["url"];
+    std::string placed_url = placed_action["parameters"]["ingredients"][0]["url"];
+    EXPECT_NE(opened_url, placed_url)
+        << "the two adds of the same archive should produce distinct linked ingredients";
 }
 
 // Catalog pattern: write per-ingredient archives indexed by instance_id,
@@ -6533,6 +6739,7 @@ TEST_F(BuilderTest, LinkThreeIngredientArchivesDistinctIdsUsingArchiveApi)
             {
                 {"label", "c2pa.actions.v2"},
                 {"data", {{"actions", json::array({
+                    created_first_action(),
                     {
                         {"action", "c2pa.placed"},
                         {"parameters", {{"ingredientIds", json::array({"ing-a", "ing-b", "ing-c"})}}}
@@ -6609,6 +6816,7 @@ TEST_F(BuilderTest, MixIngredientApisLinkByLabel)
             {
                 {"label", "c2pa.actions.v2"},
                 {"data", {{"actions", json::array({
+                    created_first_action(),
                     {
                         {"action", "c2pa.placed"},
                         {"parameters", {{"ingredientIds", json::array({"via-add", "via-stream", "via-archive"})}}}
@@ -6682,6 +6890,7 @@ TEST_F(BuilderTest, IngredientArchiveFallsBackToInstanceIdWhenNoLabel)
             {
                 {"label", "c2pa.actions.v2"},
                 {"data", {{"actions", json::array({
+                    created_first_action(),
                     {
                         {"action", "c2pa.placed"},
                         {"parameters", {{"ingredientIds", json::array({"xmp:iid:anon-fixture"})}}}
@@ -6786,7 +6995,10 @@ TEST_F(BuilderTest, InstanceIdSurvivesWriteIngredientArchiveRoundTripAndSigning)
         .create_context();
 
     auto manifest_str = R"({
-        "claim_generator_info": [{"name": "test", "version": "1.0"}]
+        "claim_generator_info": [{"name": "test", "version": "1.0"}],
+        "assertions": [{"label": "c2pa.actions.v2", "data": {"actions": [
+            {"action": "c2pa.created", "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCreation"}
+        ]}}]
     })";
 
     auto producer = c2pa::Builder(context, manifest_str);
@@ -6827,7 +7039,10 @@ TEST_F(BuilderTest, InstanceIdAutoGeneratedWhenNotProvided)
         .create_context();
 
     auto manifest_str = R"({
-        "claim_generator_info": [{"name": "test", "version": "1.0"}]
+        "claim_generator_info": [{"name": "test", "version": "1.0"}],
+        "assertions": [{"label": "c2pa.actions.v2", "data": {"actions": [
+            {"action": "c2pa.created", "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCreation"}
+        ]}}]
     })";
 
     // Add ingredient with NO instance_id in JSON.
@@ -6861,7 +7076,10 @@ TEST_F(BuilderTest, RelationshipDefaultsToComponentOf)
     auto context = c2pa::Context::ContextBuilder().create_context();
 
     auto manifest_str = R"({
-        "claim_generator_info": [{"name": "test", "version": "1.0"}]
+        "claim_generator_info": [{"name": "test", "version": "1.0"}],
+        "assertions": [{"label": "c2pa.actions.v2", "data": {"actions": [
+            {"action": "c2pa.created", "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCreation"}
+        ]}}]
     })";
 
     // Add ingredient with NO relationship in JSON.
@@ -6952,7 +7170,9 @@ TEST_F(BuilderTest, IngredientIdPassedToWriteArchiveRestoredPrefersLabelInSignin
         "claim_generator_info": [{"name": "test", "version": "1.0"}],
         "assertions": [{
             "label": "c2pa.actions.v2",
-            "data": {"actions": [{"action": "c2pa.placed",
+            "data": {"actions": [
+                {"action": "c2pa.created", "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCreation"},
+                {"action": "c2pa.placed",
                 "parameters": {"ingredientIds": ["my-label"]}}]}
         }]
     })";
@@ -7002,7 +7222,9 @@ TEST_F(BuilderTest, IngredientIdPassedToWriteArchiveRestoredAsLabelUsingLabelOnl
         "claim_generator_info": [{"name": "test", "version": "1.0"}],
         "assertions": [{
             "label": "c2pa.actions.v2",
-            "data": {"actions": [{"action": "c2pa.placed",
+            "data": {"actions": [
+                {"action": "c2pa.created", "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCreation"},
+                {"action": "c2pa.placed",
                 "parameters": {"ingredientIds": ["only-label"]}}]}
         }]
     })";
@@ -7051,7 +7273,9 @@ TEST_F(BuilderTest, IngredientIdPassedToWriteArchiveRestoredAsLabelUsingInstance
         "claim_generator_info": [{"name": "test", "version": "1.0"}],
         "assertions": [{
             "label": "c2pa.actions.v2",
-            "data": {"actions": [{"action": "c2pa.placed",
+            "data": {"actions": [
+                {"action": "c2pa.created", "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCreation"},
+                {"action": "c2pa.placed",
                 "parameters": {"ingredientIds": ["iid:only-instance"]}}]}
         }]
     })";
@@ -7102,7 +7326,9 @@ TEST_F(BuilderTest, IngredientIdPassedToWriteArchiveRestoredAsLabelBothSetUseLab
         "claim_generator_info": [{"name": "test", "version": "1.0"}],
         "assertions": [{
             "label": "c2pa.actions.v2",
-            "data": {"actions": [{"action": "c2pa.placed",
+            "data": {"actions": [
+                {"action": "c2pa.created", "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCreation"},
+                {"action": "c2pa.placed",
                 "parameters": {"ingredientIds": ["lbl:both-set"]}}]}
         }]
     })";
@@ -7156,7 +7382,9 @@ TEST_F(BuilderTest, IngredientIdPassedToWriteArchiveRestoredAsLabelBothSetUseIns
         "claim_generator_info": [{"name": "test", "version": "1.0"}],
         "assertions": [{
             "label": "c2pa.actions.v2",
-            "data": {"actions": [{"action": "c2pa.placed",
+            "data": {"actions": [
+                {"action": "c2pa.created", "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCreation"},
+                {"action": "c2pa.placed",
                 "parameters": {"ingredientIds": ["iid:both-set2"]}}]}
         }]
     })";
