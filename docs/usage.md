@@ -18,8 +18,20 @@ Use the `Reader` constructor to read C2PA data from a stream. This constructor e
 The parameters are:
 
 - `context` - A `Context` (or any `IContextProvider`) that configures SDK behavior. See [Configuring the SDK with Context and Settings](context-settings.md).
-- `<FORMAT>` - A MIME string format for the stream; must be one of the [supported file formats](supported-formats.md).
+- `<FORMAT>` - A MIME type or file extension for the stream, for example `image/jpeg` or `jpg`; see the [supported file formats](https://github.com/contentauth/c2pa-rs/blob/main/docs/supported-formats.md). Pass an empty string to take the format from the stream's leading bytes instead.
 - `<STREAM>` - An open readable iostream.
+
+You pass an empty string or use the overload that takes no format to ask the native core library to try to guess the format:
+
+```cpp
+c2pa::Context context;
+std::ifstream ifs("asset.bin", std::ios::binary);
+auto reader = c2pa::Reader(std::make_shared<c2pa::Context>(), ifs);
+```
+
+The stream must support seeking, since it is rewound after inspection. A file path with no extension is read the same way.
+
+`Builder` always requires an explicit format, because the container type decides how the asset is written and hashed. Signing with a blank format, or to a destination path with no extension, throws.
 
 For example:
 

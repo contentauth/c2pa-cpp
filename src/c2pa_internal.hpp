@@ -18,10 +18,13 @@
 #ifndef C2PA_INTERNAL_HPP
 #define C2PA_INTERNAL_HPP
 
+#include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <fstream>
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <memory>
 
@@ -237,9 +240,87 @@ inline std::unique_ptr<StreamType> open_file_binary(const std::filesystem::path 
 /// @brief Extract file extension without the leading dot
 /// @param path Filesystem path
 /// @return Extension string (e.g., "jpg" not ".jpg")
+/// @details Empty when the path has no extension, which asks the library to
+///          determine the container type from the asset's leading bytes.
 inline std::string extract_file_extension(const std::filesystem::path &path) noexcept {
     auto ext = path.extension().string();
     return ext.empty() ? "" : ext.substr(1);
+}
+
+/// @brief Format asking the library to determine the container type from content.
+/// @details The C API rejects a null format, so absent must be spelled empty.
+inline constexpr const char *kDetectFormatFromContent = "";
+
+/// @brief ASCII whitespace padding. Formats are MIME types or extensions,
+///        so non-ASCII spaces are deliberately excluded.
+inline constexpr std::string_view kFormatWhitespace = " \t\n\r\f\v";
+
+/// @brief True when a format is absent, i.e. empty or only ASCII whitespace.
+inline bool is_blank_format(const std::string &format) noexcept {
+    return format.find_first_not_of(kFormatWhitespace) == std::string::npos;
+}
+
+/// @brief Validate a caller-supplied format and normalize a blank one.
+/// @param format The format supplied by, or derived for, the caller.
+/// @param supported Formats accepted here. When empty the check is skipped.
+/// @param allow_detection Whether a blank format may request content detection.
+/// @return An empty string when @p format is blank, otherwise @p format unchanged.
+/// @throws C2paException if @p format is blank and @p allow_detection is false,
+///         or if a non-blank @p format is not in a non-empty @p supported.
+/// @details Matching ignores case; the caller's spelling is returned unchanged.
+[[nodiscard]] inline std::string validate_format(const std::string &format,
+                                                 const std::vector<std::string> &supported,
+                                                 bool allow_detection) {
+    if (is_blank_format(format)) {
+        if (!allow_detection) {
+            throw C2paException("An explicit format is required.");
+        }
+        // Blank hint for the native core lib to attempt guessing the format.
+        return std::string();
+    }
+
+    if (supported.empty()) {
+        // List unavailable; defer to the library's own validation.
+        return format;
+    }
+
+    std::string lowered = format;
+    std::transform(lowered.begin(), lowered.end(), lowered.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    if (std::find(supported.begin(), supported.end(), lowered) == supported.end()) {
+        throw C2paException("Unsupported format \"" + format + "\".");
+    }
+    return format;
+}
+
+/// @brief Formats accepted for reading, queried once from the C2PA library.
+/// @return The supported formats, or an empty vector if the library reported none.
+/// @details Fixed for the lifetime of the loaded library, so it is cached.
+///          An empty result disables the check, leaving validation to the library.
+inline const std::vector<std::string> &supported_reader_formats() {
+    static const std::vector<std::string> formats = [] {
+        try {
+            return Reader::supported_mime_types();
+        } catch (...) {
+            return std::vector<std::string>{};
+        }
+    }();
+    return formats;
+}
+
+/// @brief Formats accepted for signing, queried once from the C2PA library.
+/// @return The supported formats, or an empty vector if the library reported none.
+/// @details This list is for signing and must not be substituted for supported_reader_formats().
+inline const std::vector<std::string> &supported_builder_formats() {
+    static const std::vector<std::string> formats = [] {
+        try {
+            return Builder::supported_mime_types();
+        } catch (...) {
+            return std::vector<std::string>{};
+        }
+    }();
+    return formats;
 }
 
 /// @brief Convert C string result to C++ string with cleanup

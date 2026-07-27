@@ -46,6 +46,10 @@ namespace c2pa
             throw C2paException("Invalid Context provider IContextProvider");
         }
 
+        // Validate before acquiring anything.
+        const std::string resolved = detail::validate_format(
+            format, detail::supported_reader_formats(), true);
+
         // Create the stream wrapper before the reader handle
         cpp_stream = std::make_unique<CppIStream>(stream);
 
@@ -56,7 +60,7 @@ namespace c2pa
 
         // Update reader with stream.
         // Note: c2pa_reader_with_stream consumes the reader pointer.
-        C2paReader* updated = c2pa_reader_with_stream(c2pa_reader, format.c_str(), cpp_stream->c_stream);
+        C2paReader* updated = c2pa_reader_with_stream(c2pa_reader, resolved.c_str(), cpp_stream->c_stream);
         c2pa_reader = nullptr;
         if (updated == nullptr) {
             throw C2paException();
@@ -79,7 +83,10 @@ namespace c2pa
             throw std::system_error(errno, std::system_category(), "Failed to open file: " + source_path.string());
         }
 
-        std::string extension = detail::extract_file_extension(source_path);
+        // The extension describes the filename, so it is normalized and left unchecked.
+        // Content type detection overrides it anyway if wrong.
+        const std::string extension = detail::validate_format(
+            detail::extract_file_extension(source_path), {}, true);
 
         // CppIStream stores reference to owned_stream, which lives as long as Reader
         cpp_stream = std::make_unique<CppIStream>(*owned_stream);
@@ -111,6 +118,11 @@ namespace c2pa
             throw C2paException("manifest_jumbf must not be empty");
         }
 
+        // Guessing formats is not supported here.
+        // The container type decides how the asset is hashed.
+        const std::string resolved = detail::validate_format(
+            format, detail::supported_reader_formats(), false);
+
         cpp_stream = std::make_unique<CppIStream>(image_stream);
 
         c2pa_reader = c2pa_reader_from_context(context.c_context());
@@ -121,7 +133,7 @@ namespace c2pa
         // c2pa_reader_with_manifest_data_and_stream always consumes c2pa_reader.
         C2paReader* updated = c2pa_reader_with_manifest_data_and_stream(
             c2pa_reader,
-            format.c_str(),
+            resolved.c_str(),
             cpp_stream->c_stream,
             manifest_jumbf.data(),
             manifest_jumbf.size());
@@ -157,6 +169,11 @@ namespace c2pa
         context_ref = std::move(context);
     }
 
+    Reader::Reader(std::shared_ptr<IContextProvider> context, std::istream &stream)
+        : Reader(std::move(context), detail::kDetectFormatFromContent, stream)
+    {
+    }
+
     Reader::Reader(std::shared_ptr<IContextProvider> context, const std::filesystem::path &source_path)
         : c2pa_reader(nullptr)
     {
@@ -184,6 +201,10 @@ namespace c2pa
     {
         ensure_initialized();
 
+        // Guessing formats is not supported here.
+        const std::string resolved = detail::validate_format(
+            format, detail::supported_reader_formats(), false);
+
         CppIStream main_wrapper(stream);
         CppIStream fragment_wrapper(fragment);
 
@@ -191,7 +212,7 @@ namespace c2pa
         // *this is returned for chaining so reading can go through all segments.
         C2paReader* updated = c2pa_reader_with_fragment(
             c2pa_reader,
-            format.c_str(),
+            resolved.c_str(),
             main_wrapper.c_stream,
             fragment_wrapper.c_stream);
         c2pa_reader = nullptr;
@@ -205,8 +226,11 @@ namespace c2pa
 
     Reader::Reader(const std::string &format, std::istream &stream)
     {
+        const std::string resolved = detail::validate_format(
+            format, detail::supported_reader_formats(), true);
+
         cpp_stream = std::make_unique<CppIStream>(stream);
-        c2pa_reader = c2pa_reader_from_stream(format.c_str(), cpp_stream->c_stream);
+        c2pa_reader = c2pa_reader_from_stream(resolved.c_str(), cpp_stream->c_stream);
         if (c2pa_reader == nullptr)
         {
             throw C2paException();
@@ -221,7 +245,8 @@ namespace c2pa
             throw std::system_error(errno, std::system_category(), "Failed to open file: " + source_path.string());
         }
 
-        std::string extension = detail::extract_file_extension(source_path);
+        const std::string extension = detail::validate_format(
+            detail::extract_file_extension(source_path), {}, true);
 
         // CppIStream stores reference to owned_stream, which lives as long as Reader
         cpp_stream = std::make_unique<CppIStream>(*owned_stream);
@@ -320,5 +345,11 @@ namespace c2pa
 
     std::optional<Reader> Reader::from_asset(std::shared_ptr<IContextProvider> context, const std::string& format, std::istream& stream) {
         return reader_from_asset_impl([&]() { return Reader(std::move(context), format, stream); });
+    }
+
+    std::optional<Reader> Reader::from_asset(std::shared_ptr<IContextProvider> context, std::istream& stream) {
+        return reader_from_asset_impl([&]() {
+            return Reader(std::move(context), detail::kDetectFormatFromContent, stream);
+        });
     }
 } // namespace c2pa

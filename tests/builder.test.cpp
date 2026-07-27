@@ -82,6 +82,12 @@ protected:
         temp_dirs.clear();
     }
 
+    // Helper: Creates a Builder with a test manifest.
+    c2pa::Builder make_builder() {
+        auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+        return c2pa::Builder(manifest);
+    }
+
     // Helper: Creates an ingredient archive (.c2pa) from a single ingredient.
     void create_ingredient_archive(
         const fs::path& archive_path,
@@ -7505,4 +7511,180 @@ TEST_F(BuilderTest, ArchiveToFstreamBackedCppOStream) {
     dest.flush();
 
     EXPECT_GT(std::filesystem::file_size(archive_path), 0u);
+}
+
+// Signing always needs the container type, which decides how it hashes.
+class BuilderBlankFormatTest : public BuilderTest, public ::testing::WithParamInterface<std::string> {};
+
+INSTANTIATE_TEST_SUITE_P(BuilderBlankFormatSignTests, BuilderBlankFormatTest,
+                         ::testing::Values("", " ", "   ", "\t", "\n", "\t\n ", "\r\n", "\v\f"));
+
+TEST_P(BuilderBlankFormatTest, SignRejectsBlankFormat) {
+    auto signer = c2pa_test::create_test_signer();
+    auto builder = make_builder();
+
+    std::ifstream source(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+    ASSERT_TRUE(source.is_open());
+    std::stringstream dest(std::ios::in | std::ios::out | std::ios::binary);
+
+    EXPECT_THROW({ builder.sign(GetParam(), source, dest, signer); }, c2pa::C2paException);
+}
+
+TEST_F(BuilderTest, SignBlankAndEmptyFormatsReportTheSameMessage) {
+    auto signer = c2pa_test::create_test_signer();
+
+    auto collect_message = [&](const std::string& format) {
+        auto builder = make_builder();
+        std::ifstream source(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+        EXPECT_TRUE(source.is_open());
+        std::stringstream dest(std::ios::in | std::ios::out | std::ios::binary);
+        try {
+            builder.sign(format, source, dest, signer);
+            return std::string("<no exception>");
+        } catch (const c2pa::C2paException& e) {
+            return std::string(e.what());
+        }
+    };
+
+    const std::string from_empty = collect_message("");
+    EXPECT_NE(from_empty, "<no exception>");
+    EXPECT_EQ(from_empty, collect_message("   "));
+}
+
+TEST_F(BuilderTest, SignToExtensionlessDestinationThrows) {
+    auto signer = c2pa_test::create_test_signer();
+    auto builder = make_builder();
+    fs::path dest = get_temp_path("signed-noext");
+
+    EXPECT_THROW(
+        { builder.sign(c2pa_test::get_fixture_path("A.jpg"), dest, signer); },
+        c2pa::C2paException);
+}
+
+TEST_F(BuilderTest, SignDoesNotTruncateDestinationWhenFormatIsRejected) {
+    // The destination opens with trunc, so the format is checked before it.
+    auto signer = c2pa_test::create_test_signer();
+    auto builder = make_builder();
+
+    fs::path dest = get_temp_path("existing-destination-noext");
+    const std::string original = "existing contents that must survive";
+    {
+        std::ofstream f(dest, std::ios::binary | std::ios::trunc);
+        ASSERT_TRUE(f.is_open());
+        f << original;
+    }
+
+    EXPECT_THROW(
+        { builder.sign(c2pa_test::get_fixture_path("A.jpg"), dest, signer); },
+        c2pa::C2paException);
+
+    ASSERT_TRUE(fs::exists(dest));
+    std::ifstream check(dest, std::ios::binary);
+    std::stringstream after;
+    after << check.rdbuf();
+    EXPECT_EQ(after.str(), original);
+}
+
+TEST_F(BuilderTest, SignWithUnsupportedFormatThrows) {
+    auto signer = c2pa_test::create_test_signer();
+    auto builder = make_builder();
+
+    std::ifstream source(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+    ASSERT_TRUE(source.is_open());
+    std::stringstream dest(std::ios::in | std::ios::out | std::ios::binary);
+
+    EXPECT_THROW({ builder.sign("application/zip", source, dest, signer); },
+                 c2pa::C2paException);
+}
+
+TEST_F(BuilderTest, SignRejectsReadOnlyFormat) {
+    // Signing validates against the writable formats.
+    const auto readable = c2pa::Reader::supported_mime_types();
+    const auto writable = c2pa::Builder::supported_mime_types();
+
+    std::string read_only;
+    for (const auto& format : readable) {
+        if (std::find(writable.begin(), writable.end(), format) == writable.end()) {
+            read_only = format;
+            break;
+        }
+    }
+    if (read_only.empty()) {
+        GTEST_SKIP() << "Every readable format is also writable";
+    }
+
+    auto signer = c2pa_test::create_test_signer();
+    auto builder = make_builder();
+    std::ifstream source(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+    ASSERT_TRUE(source.is_open());
+    std::stringstream dest(std::ios::in | std::ios::out | std::ios::binary);
+
+    EXPECT_THROW({ builder.sign(read_only, source, dest, signer); }, c2pa::C2paException);
+}
+
+TEST_F(BuilderTest, SignMessageNamesFormatNotPath) {
+    auto signer = c2pa_test::create_test_signer();
+    auto builder = make_builder();
+    fs::path dest = get_temp_path("message-probe-noext");
+
+    try {
+        builder.sign(c2pa_test::get_fixture_path("A.jpg"), dest, signer);
+        FAIL() << "Expected an extensionless destination to be rejected";
+    } catch (const c2pa::C2paException& e) {
+        const std::string msg = e.what();
+        EXPECT_EQ(msg.find(dest.string()), std::string::npos) << msg;
+        EXPECT_EQ(msg.find("message-probe-noext"), std::string::npos) << msg;
+    }
+}
+
+TEST_F(BuilderTest, AddIngredientExtensionlessPathThrows) {
+    auto builder = make_builder();
+    fs::path ingredient = get_temp_path("ingredient-noext");
+    {
+        std::ifstream src(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+        ASSERT_TRUE(src.is_open());
+        std::ofstream out(ingredient, std::ios::binary | std::ios::trunc);
+        ASSERT_TRUE(out.is_open());
+        out << src.rdbuf();
+    }
+
+    EXPECT_THROW(
+        { builder.add_ingredient(R"({"title": "A.jpg", "relationship": "componentOf"})", ingredient); },
+        c2pa::C2paException);
+}
+
+TEST_F(BuilderTest, AcceptsSupportedBareExtension) {
+    auto signer = c2pa_test::create_test_signer();
+    auto builder = make_builder();
+
+    std::ifstream source(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+    ASSERT_TRUE(source.is_open());
+    std::stringstream dest(std::ios::in | std::ios::out | std::ios::binary);
+
+    EXPECT_NO_THROW({ builder.sign("jpg", source, dest, signer); });
+}
+
+TEST_F(BuilderTest, ArchiveWithEmptyFormatThrows) {
+    // A c2pa archive carries no signature that identifies the format it came for/from,
+    // so reading one back requires naming the format.
+    auto builder = make_builder();
+    builder.add_ingredient(R"({"title": "C.jpg", "relationship": "componentOf"})",
+                           c2pa_test::get_fixture_path("C.jpg"));
+
+    std::ostringstream archive_out(std::ios::binary);
+    ASSERT_NO_THROW(builder.to_archive(archive_out));
+    const std::string archive_bytes = archive_out.str();
+    ASSERT_FALSE(archive_bytes.empty());
+
+    {   // Control: naming the format works.
+        std::istringstream in(archive_bytes, std::ios::binary);
+        auto ctx = std::make_shared<c2pa::Context>();
+        c2pa::Reader reader(ctx, "application/c2pa", in);
+        EXPECT_FALSE(reader.json().empty());
+    }
+    {   // Same bytes, no format: the container cannot be identified.
+        std::istringstream in(archive_bytes, std::ios::binary);
+        auto ctx = std::make_shared<c2pa::Context>();
+        EXPECT_THROW({ c2pa::Reader reader(ctx, "", in); }, c2pa::C2paException);
+    }
 }

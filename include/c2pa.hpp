@@ -741,7 +741,7 @@ namespace c2pa
     class C2PA_CPP_API Reader
     {
     private:
-        C2paReader *c2pa_reader;
+        C2paReader *c2pa_reader = nullptr;
         std::unique_ptr<std::ifstream> owned_stream;       // Owns file stream when created from path
         std::unique_ptr<CppIStream> cpp_stream;            // Wraps stream for C API; destroyed before owned_stream
         std::shared_ptr<IContextProvider> context_ref;
@@ -800,12 +800,23 @@ namespace c2pa
         /// @throws C2paException if context is null or context->is_valid() returns false.
         Reader(std::shared_ptr<IContextProvider> context, const std::string &format, std::istream &stream);
 
+        /// @brief Create a Reader from a shared context and stream, trying to guess the format from content.
+        /// @details Equivalent to passing an empty format.
+        ///          The stream is rewound after  inspection, so it must support seeking.
+        /// @param context Shared context provider.
+        /// @param stream The input stream to read from. Must support seeking.
+        /// @throws C2paException if context is null, context->is_valid() returns false, or the
+        ///         container type cannot be determined.
+        Reader(std::shared_ptr<IContextProvider> context, std::istream &stream);
+
         /// @brief Create a Reader from a shared context and file path.
         /// @details The Reader retains a shared reference to the context, keeping it
         ///          alive for the lifetime of the Reader.
         /// @param context Shared context provider.
         /// @param source_path The path to the file to read.
         /// @throws C2paException if context is null or context->is_valid() returns false.
+        /// @note With no extension, the container may be guessed by the native core library (best-effort).
+        ///       An unsupported extension is accepted, since content overrides it.
         Reader(std::shared_ptr<IContextProvider> context, const std::filesystem::path &source_path);
 
         /// @brief Create a Reader from a shared context, image stream, and external JUMBF manifest.
@@ -880,6 +891,15 @@ namespace c2pa
         /// @return A Reader if JUMBF (c2pa/manifest) data is present; std::nullopt if none.
         /// @throws C2paException for errors other than a missing manifest.
         static std::optional<Reader> from_asset(std::shared_ptr<IContextProvider> context, const std::string &format, std::istream &stream);
+
+        /// @brief Try to create a Reader from a shared context and stream, trying to guess the format from content.
+        /// @details The Reader retains a shared reference to the context if C2PA data is found.
+        /// @param context Shared context provider.
+        /// @param stream The input stream to read from. Must support seeking.
+        /// @return A Reader if JUMBF (c2pa/manifest) data is present; std::nullopt if none.
+        /// @throws C2paException for errors other than a missing manifest.
+        ///         Content that cannot be identified also raises an error.
+        static std::optional<Reader> from_asset(std::shared_ptr<IContextProvider> context, std::istream &stream);
 
         // Non-copyable
         Reader(const Reader&) = delete;

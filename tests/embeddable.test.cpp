@@ -50,6 +50,12 @@ protected:
         }
         temp_files.clear();
     }
+
+    // Helper: Creates a Builder with a test manifest.
+    c2pa::Builder make_builder() {
+        auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+        return c2pa::Builder(manifest);
+    }
 };
 
 // e2e workflow with A.jpg (has no existing C2PA)
@@ -645,4 +651,64 @@ TEST_F(EmbeddableTest, DirectEmbeddingWithFormat) {
     EXPECT_GT(jpeg_manifest.size(), 0);
     EXPECT_EQ(jpeg_manifest.size(), placeholder.size())
         << "Direct JPEG format output matches placeholder size";
+}
+
+// The format selects the hash binding, so the embeddable workflow requires one.
+
+class EmbeddableBlankFormatTest : public EmbeddableTest, public ::testing::WithParamInterface<std::string> {};
+
+INSTANTIATE_TEST_SUITE_P(EmbeddableBlankFormats, EmbeddableBlankFormatTest,
+                         ::testing::Values("", " ", "   ", "\t", "\n", "\t\n ", "\r\n", "\v\f"));
+
+TEST_P(EmbeddableBlankFormatTest, NeedsPlaceholderRejectsBlankFormat) {
+    auto builder = make_builder();
+    EXPECT_THROW({ builder.needs_placeholder(GetParam()); }, c2pa::C2paException);
+}
+
+TEST_P(EmbeddableBlankFormatTest, PlaceholderRejectsBlankFormat) {
+    auto builder = make_builder();
+    EXPECT_THROW({ builder.placeholder(GetParam()); }, c2pa::C2paException);
+}
+
+TEST_F(EmbeddableTest, DataHashedPlaceholderRejectsBlankFormat) {
+    auto signer = c2pa_test::create_test_signer();
+    auto builder = make_builder();
+    EXPECT_THROW({ builder.data_hashed_placeholder(signer.reserve_size(), ""); },
+                 c2pa::C2paException);
+    EXPECT_THROW({ builder.data_hashed_placeholder(signer.reserve_size(), "   "); },
+                 c2pa::C2paException);
+}
+
+TEST_F(EmbeddableTest, UpdateHashFromStreamRejectsBlankFormat) {
+    auto builder = make_builder();
+    std::ifstream asset(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+    ASSERT_TRUE(asset.is_open());
+    EXPECT_THROW({ builder.update_hash_from_stream("", asset); }, c2pa::C2paException);
+}
+
+TEST_F(EmbeddableTest, SignEmbeddableRejectsBlankFormat) {
+    auto builder = make_builder();
+    EXPECT_THROW({ builder.sign_embeddable(""); }, c2pa::C2paException);
+}
+
+TEST_F(EmbeddableTest, FormatEmbeddableRejectsBlankFormat) {
+    std::vector<unsigned char> data{0x01, 0x02, 0x03};
+    EXPECT_THROW({ c2pa::Builder::format_embeddable("", data); }, c2pa::C2paException);
+}
+
+TEST_F(EmbeddableTest, EmbeddableStepsRejectUnsupportedFormat) {
+    auto builder = make_builder();
+    EXPECT_THROW({ builder.needs_placeholder("application/zip"); }, c2pa::C2paException);
+    EXPECT_THROW({ builder.placeholder("application/zip"); }, c2pa::C2paException);
+
+    std::vector<unsigned char> data{0x01, 0x02, 0x03};
+    EXPECT_THROW({ c2pa::Builder::format_embeddable("application/zip", data); },
+                 c2pa::C2paException);
+}
+
+TEST_F(EmbeddableTest, NeedsPlaceholderDistinguishesContainersWhenFormatIsGiven) {
+    // A named format yields a container-specific answer.
+    auto builder = make_builder();
+    EXPECT_NO_THROW({ builder.needs_placeholder("image/jpeg"); });
+    EXPECT_NO_THROW({ builder.needs_placeholder("video/mp4"); });
 }
