@@ -1,0 +1,11 @@
+{
+  "format": "image/jpeg",
+  "instance_id": "xmp:iid:11111111-2222-3333-4444-555555555555",
+  "label": "dir-link-label",
+  "manifest_data": {
+    "format": "application/c2pa",
+    "identifier": "manifest_data.c2pa"
+  },
+  "relationship": "componentOf",
+  "title": "label-persist.jpg"
+}

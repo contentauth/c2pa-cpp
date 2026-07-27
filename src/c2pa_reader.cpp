@@ -318,9 +318,7 @@ namespace c2pa
     }
 
     std::vector<std::string> Reader::supported_mime_types() {
-      uintptr_t count = 0;
-      auto ptr = c2pa_reader_supported_mime_types(&count);
-      return detail::c_mime_types_to_vector(ptr, count);
+      return detail::supported_reader_formats();
     }
 
     std::optional<Reader> Reader::from_asset(IContextProvider& context, const std::filesystem::path& source_path) {

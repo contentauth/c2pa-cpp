@@ -526,8 +526,6 @@ namespace c2pa
     }
 
     std::vector<std::string> Builder::supported_mime_types() {
-      uintptr_t count = 0;
-      auto ptr = c2pa_builder_supported_mime_types(&count);
-      return detail::c_mime_types_to_vector(ptr, count);
+      return detail::supported_builder_formats();
     }
 } // namespace c2pa

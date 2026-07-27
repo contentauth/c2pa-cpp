@@ -301,7 +301,9 @@ inline bool is_blank_format(const std::string &format) noexcept {
 inline const std::vector<std::string> &supported_reader_formats() {
     static const std::vector<std::string> formats = [] {
         try {
-            return Reader::supported_mime_types();
+            uintptr_t count = 0;
+            const char *const *ptr = c2pa_reader_supported_mime_types(&count);
+            return c_mime_types_to_vector(ptr, count);
         } catch (...) {
             return std::vector<std::string>{};
         }
@@ -315,7 +317,9 @@ inline const std::vector<std::string> &supported_reader_formats() {
 inline const std::vector<std::string> &supported_builder_formats() {
     static const std::vector<std::string> formats = [] {
         try {
-            return Builder::supported_mime_types();
+            uintptr_t count = 0;
+            const char *const *ptr = c2pa_builder_supported_mime_types(&count);
+            return c_mime_types_to_vector(ptr, count);
         } catch (...) {
             return std::vector<std::string>{};
         }
