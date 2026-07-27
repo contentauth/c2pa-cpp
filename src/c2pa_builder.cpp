@@ -187,12 +187,8 @@ namespace c2pa
 
     void Builder::add_ingredient(const std::string &ingredient_json, const std::string &format, std::istream &source)
     {
-        // Guessing formats is not supported here.
-        const std::string resolved = detail::validate_format(
-            format, detail::supported_builder_formats(), false);
-
         CppIStream c_source(source);
-        int result = c2pa_builder_add_ingredient_from_stream(builder, ingredient_json.c_str(), resolved.c_str(), c_source.c_stream);
+        int result = c2pa_builder_add_ingredient_from_stream(builder, ingredient_json.c_str(), format.c_str(), c_source.c_stream);
         if (result < 0)
         {
             throw C2paException();
@@ -201,13 +197,8 @@ namespace c2pa
 
     void Builder::add_ingredient(const std::string &ingredient_json, const std::filesystem::path &source_path)
     {
-        // Guessing formats is not supported here.
-        const std::string format = detail::validate_format(
-            detail::extract_file_extension(source_path),
-            detail::supported_builder_formats(), false);
-
         auto stream = detail::open_file_binary<std::ifstream>(source_path);
-        add_ingredient(ingredient_json, format, *stream);
+        add_ingredient(ingredient_json, detail::extract_file_extension(source_path), *stream);
     }
 
     void Builder::add_action(const std::string &action_json)
@@ -230,9 +221,7 @@ namespace c2pa
 
     std::vector<unsigned char> Builder::sign(const std::string &format, std::istream &source, std::ostream &dest, Signer &signer)
     {
-        // Guessing formats is not supported here.
-        const std::string resolved = detail::validate_format(
-            format, detail::supported_builder_formats(), false);
+        const std::string resolved = detail::require_explicit_format(format);
 
         // Caller's source/dest streams must outlive this call
         // Stream wrappers are stack locals that wrap the caller's streams
@@ -247,9 +236,7 @@ namespace c2pa
 
     std::vector<unsigned char> Builder::sign(const std::string &format, std::istream &source, std::iostream &dest, Signer &signer)
     {
-        // Guessing formats is not supported here.
-        const std::string resolved = detail::validate_format(
-            format, detail::supported_builder_formats(), false);
+        const std::string resolved = detail::require_explicit_format(format);
 
         // Caller's source/dest streams must outlive this call
         // Stream wrappers are stack locals that wrap the caller's streams
@@ -270,11 +257,9 @@ namespace c2pa
     /// @throws C2pa::C2paException for errors encountered by the C2PA library.
     std::vector<unsigned char> Builder::sign(const std::filesystem::path &source_path, const std::filesystem::path &dest_path, Signer &signer)
     {
-        // Guessing formats is not supported here. Validate before opening the
-        // destination, which opens with trunc.
-        const std::string format = detail::validate_format(
-            detail::extract_file_extension(dest_path),
-            detail::supported_builder_formats(), false);
+        // Validate before opening the destination, which opens with trunc.
+        const std::string format =
+            detail::require_explicit_format(detail::extract_file_extension(dest_path));
 
         auto source = detail::open_file_binary<std::ifstream>(source_path);
         // Ensure the destination directory exists
@@ -298,9 +283,7 @@ namespace c2pa
 
     std::vector<unsigned char> Builder::sign(const std::string &format, std::istream &source, std::iostream &dest)
     {
-        // Guessing formats is not supported here.
-        const std::string resolved = detail::validate_format(
-            format, detail::supported_builder_formats(), false);
+        const std::string resolved = detail::require_explicit_format(format);
 
         CppIStream c_source(source);
         CppIOStream c_dest(dest);
@@ -312,11 +295,9 @@ namespace c2pa
 
     std::vector<unsigned char> Builder::sign(const std::filesystem::path &source_path, const std::filesystem::path &dest_path)
     {
-        // Guessing formats is not supported here. Validate before opening the
-        // destination, which opens with trunc.
-        const std::string format = detail::validate_format(
-            detail::extract_file_extension(dest_path),
-            detail::supported_builder_formats(), false);
+        // Validate before opening the destination, which opens with trunc.
+        const std::string format =
+            detail::require_explicit_format(detail::extract_file_extension(dest_path));
 
         auto source = detail::open_file_binary<std::ifstream>(source_path);
         auto dest_dir = dest_path.parent_path();
@@ -416,9 +397,7 @@ namespace c2pa
 
     std::vector<unsigned char> Builder::data_hashed_placeholder(uintptr_t reserve_size, const std::string &format)
     {
-        // Guessing formats is not supported here.
-        const std::string resolved = detail::validate_format(
-            format, detail::supported_builder_formats(), false);
+        const std::string resolved = detail::require_explicit_format(format);
 
         const unsigned char *c2pa_manifest_bytes = nullptr;
         auto result = c2pa_builder_data_hashed_placeholder(builder, reserve_size, resolved.c_str(), &c2pa_manifest_bytes);
@@ -427,9 +406,7 @@ namespace c2pa
 
     std::vector<unsigned char> Builder::sign_data_hashed_embeddable(Signer &signer, const std::string &data_hash, const std::string &format, std::istream *asset)
     {
-        // Guessing formats is not supported here.
-        const std::string resolved = detail::validate_format(
-            format, detail::supported_builder_formats(), false);
+        const std::string resolved = detail::require_explicit_format(format);
 
         int64_t result;
         const unsigned char *c2pa_manifest_bytes = nullptr;
@@ -447,9 +424,7 @@ namespace c2pa
 
     bool Builder::needs_placeholder(const std::string &format)
     {
-        // Guessing formats is not supported here.
-        const std::string resolved = detail::validate_format(
-            format, detail::supported_builder_formats(), false);
+        const std::string resolved = detail::require_explicit_format(format);
 
         int result = c2pa_builder_needs_placeholder(builder, resolved.c_str());
         if (result < 0)
@@ -461,10 +436,8 @@ namespace c2pa
 
     std::vector<unsigned char> Builder::placeholder(const std::string &format)
     {
-        // Guessing formats is not supported here:
-        // the format selects the hash assertion written into the builder.
-        const std::string resolved = detail::validate_format(
-            format, detail::supported_builder_formats(), false);
+        // The format selects the hash assertion written into the builder.
+        const std::string resolved = detail::require_explicit_format(format);
 
         const unsigned char *c2pa_manifest_bytes = nullptr;
         auto result = c2pa_builder_placeholder(builder, resolved.c_str(), &c2pa_manifest_bytes);
@@ -490,10 +463,8 @@ namespace c2pa
 
     void Builder::update_hash_from_stream(const std::string &format, std::istream &stream)
     {
-        // Guessing formats is not supported here: the format decides which
-        // hash assertion is updated.
-        const std::string resolved = detail::validate_format(
-            format, detail::supported_builder_formats(), false);
+        // The format decides which hash assertion is updated.
+        const std::string resolved = detail::require_explicit_format(format);
 
         CppIStream c_stream(stream);
         int result = c2pa_builder_update_hash_from_stream(builder, resolved.c_str(), c_stream.c_stream);
@@ -505,9 +476,7 @@ namespace c2pa
 
     std::vector<unsigned char> Builder::sign_embeddable(const std::string &format)
     {
-        // Guessing formats is not supported here.
-        const std::string resolved = detail::validate_format(
-            format, detail::supported_builder_formats(), false);
+        const std::string resolved = detail::require_explicit_format(format);
 
         const unsigned char *c2pa_manifest_bytes = nullptr;
         auto result = c2pa_builder_sign_embeddable(builder, resolved.c_str(), &c2pa_manifest_bytes);
@@ -516,9 +485,7 @@ namespace c2pa
 
     std::vector<unsigned char> Builder::format_embeddable(const std::string &format, std::vector<unsigned char> &data)
     {
-        // Guessing formats is not supported here.
-        const std::string resolved = detail::validate_format(
-            format, detail::supported_builder_formats(), false);
+        const std::string resolved = detail::require_explicit_format(format);
 
         const unsigned char *c2pa_manifest_bytes = nullptr;
         auto result = c2pa_format_embeddable(resolved.c_str(), data.data(), data.size(), &c2pa_manifest_bytes);

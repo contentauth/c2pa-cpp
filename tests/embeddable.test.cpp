@@ -658,7 +658,7 @@ TEST_F(EmbeddableTest, DirectEmbeddingWithFormat) {
 class EmbeddableBlankFormatTest : public EmbeddableTest, public ::testing::WithParamInterface<std::string> {};
 
 INSTANTIATE_TEST_SUITE_P(EmbeddableBlankFormats, EmbeddableBlankFormatTest,
-                         ::testing::Values("", " ", "   ", "\t", "\n", "\t\n ", "\r\n", "\v\f"));
+                         ::testing::ValuesIn(c2pa_test::kBlankFormats));
 
 TEST_P(EmbeddableBlankFormatTest, NeedsPlaceholderRejectsBlankFormat) {
     auto builder = make_builder();
@@ -697,18 +697,37 @@ TEST_F(EmbeddableTest, FormatEmbeddableRejectsBlankFormat) {
 }
 
 TEST_F(EmbeddableTest, EmbeddableStepsRejectUnsupportedFormat) {
-    auto builder = make_builder();
-    EXPECT_THROW({ builder.needs_placeholder("application/zip"); }, c2pa::C2paException);
-    EXPECT_THROW({ builder.placeholder("application/zip"); }, c2pa::C2paException);
-
     std::vector<unsigned char> data{0x01, 0x02, 0x03};
     EXPECT_THROW({ c2pa::Builder::format_embeddable("application/zip", data); },
                  c2pa::C2paException);
 }
 
+TEST_F(EmbeddableTest, FormatEmbeddableAcceptsReadOnlyFormat) {
+    // Composing a manifest for a container the library reads but cannot write
+    // is the point of the embeddable workflow: an outside writer embeds it.
+    const auto readable = c2pa::Reader::supported_mime_types();
+    const auto writable = c2pa::Builder::supported_mime_types();
+
+    std::string read_only;
+    for (const auto& format : readable) {
+        if (std::find(writable.begin(), writable.end(), format) == writable.end()) {
+            read_only = format;
+            break;
+        }
+    }
+    if (read_only.empty()) {
+        GTEST_SKIP() << "Every readable format is also writable";
+    }
+
+    std::vector<unsigned char> data{0x01, 0x02, 0x03};
+    EXPECT_NO_THROW({ c2pa::Builder::format_embeddable(read_only, data); })
+        << "read-only format: " << read_only;
+}
+
 TEST_F(EmbeddableTest, NeedsPlaceholderDistinguishesContainersWhenFormatIsGiven) {
-    // A named format yields a container-specific answer.
+    // A named format yields a container-specific answer:
+    // BMFF needs a placeholder sized differently from a JPEG.
     auto builder = make_builder();
-    EXPECT_NO_THROW({ builder.needs_placeholder("image/jpeg"); });
-    EXPECT_NO_THROW({ builder.needs_placeholder("video/mp4"); });
+    EXPECT_TRUE(builder.needs_placeholder("image/jpeg"));
+    EXPECT_TRUE(builder.needs_placeholder("video/mp4"));
 }

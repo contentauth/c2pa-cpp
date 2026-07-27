@@ -108,7 +108,10 @@ INSTANTIATE_TEST_SUITE_P(ReaderStreamWithManifestTests, StreamWithManifestTests,
                              std::make_tuple("C.jpg", "jpg", "C.jpg"),
                              std::make_tuple("C.jpg", "JPG", "C.jpg"),
                              std::make_tuple("C.jpg", "image/jpeg", "C.jpg"),
-                             std::make_tuple("C.jpg", "Image/JPEG", "C.jpg")));
+                             std::make_tuple("C.jpg", "Image/JPEG", "C.jpg"),
+                             std::make_tuple("C2.DNG", "dng", "C.jpg"),
+                             std::make_tuple("C2.DNG", "image/dng", "C.jpg"),
+                             std::make_tuple("C2.DNG", "image/x-adobe-dng", "C.jpg")));
 
 TEST_P(StreamWithManifestTests, StreamWithManifest) {
     auto filename = std::get<0>(GetParam());
@@ -1302,4 +1305,17 @@ TEST_F(ReaderTest, WithFragmentEmptyFormatThrows) {
 
     // The reader handle is untouched by the rejected calls.
     EXPECT_FALSE(reader.json().empty());
+}
+
+TEST_F(ReaderTest, DngReadsWithExplicitAndDetectedFormat) {
+    auto by_path = c2pa::Reader(c2pa_test::get_fixture_path("C2.DNG"));
+
+    std::string bytes = fixture_bytes("C2.DNG");
+    std::istringstream stream(bytes, std::ios::binary);
+    auto detected = c2pa::Reader("", stream);
+
+    auto a = json::parse(by_path.json());
+    auto b = json::parse(detected.json());
+    EXPECT_EQ(a["active_manifest"], b["active_manifest"]);
+    EXPECT_EQ(a["manifests"].size(), b["manifests"].size());
 }

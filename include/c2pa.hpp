@@ -802,7 +802,7 @@ namespace c2pa
 
         /// @brief Create a Reader from a shared context and stream, trying to guess the format from content.
         /// @details Equivalent to passing an empty format.
-        ///          The stream is rewound after  inspection, so it must support seeking.
+        ///          The stream is rewound after inspection, so it must support seeking.
         /// @param context Shared context provider.
         /// @param stream The input stream to read from. Must support seeking.
         /// @throws C2paException if context is null, context->is_valid() returns false, or the

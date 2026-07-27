@@ -7517,7 +7517,7 @@ TEST_F(BuilderTest, ArchiveToFstreamBackedCppOStream) {
 class BuilderBlankFormatTest : public BuilderTest, public ::testing::WithParamInterface<std::string> {};
 
 INSTANTIATE_TEST_SUITE_P(BuilderBlankFormatSignTests, BuilderBlankFormatTest,
-                         ::testing::Values("", " ", "   ", "\t", "\n", "\t\n ", "\r\n", "\v\f"));
+                         ::testing::ValuesIn(c2pa_test::kBlankFormats));
 
 TEST_P(BuilderBlankFormatTest, SignRejectsBlankFormat) {
     auto signer = c2pa_test::create_test_signer();
@@ -7637,7 +7637,52 @@ TEST_F(BuilderTest, SignMessageNamesFormatNotPath) {
     }
 }
 
-TEST_F(BuilderTest, AddIngredientExtensionlessPathThrows) {
+TEST_F(BuilderTest, AddIngredientAcceptsBlankFormat) {
+    auto builder = make_builder();
+    const std::string json = R"({"title": "A.jpg", "relationship": "componentOf"})";
+
+    for (const std::string& blank : {std::string(""), std::string("   ")}) {
+        std::ifstream src(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+        ASSERT_TRUE(src.is_open());
+        EXPECT_NO_THROW({ builder.add_ingredient(json, blank, src); });
+    }
+}
+
+TEST_F(BuilderTest, AddIngredientAcceptsUnknownFormat) {
+    auto builder = make_builder();
+    const std::string json = R"({"title": "A.jpg", "relationship": "componentOf"})";
+
+    for (const std::string& format : {std::string("application/zip"), std::string("zzz")}) {
+        std::ifstream src(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+        ASSERT_TRUE(src.is_open());
+        EXPECT_NO_THROW({ builder.add_ingredient(json, format, src); }) << "format: " << format;
+    }
+}
+
+TEST_F(BuilderTest, AddIngredientAcceptsReadOnlyFormat) {
+    const auto readable = c2pa::Reader::supported_mime_types();
+    const auto writable = c2pa::Builder::supported_mime_types();
+
+    std::string read_only;
+    for (const auto& format : readable) {
+        if (std::find(writable.begin(), writable.end(), format) == writable.end()) {
+            read_only = format;
+            break;
+        }
+    }
+    if (read_only.empty()) {
+        GTEST_SKIP() << "Every readable format is also writable";
+    }
+
+    auto builder = make_builder();
+    std::ifstream src(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+    ASSERT_TRUE(src.is_open());
+    EXPECT_NO_THROW({
+        builder.add_ingredient(R"({"title": "A.jpg", "relationship": "componentOf"})", read_only, src);
+    }) << "read-only format: " << read_only;
+}
+
+TEST_F(BuilderTest, AddIngredientFromExtensionlessPath) {
     auto builder = make_builder();
     fs::path ingredient = get_temp_path("ingredient-noext");
     {
@@ -7648,9 +7693,23 @@ TEST_F(BuilderTest, AddIngredientExtensionlessPathThrows) {
         out << src.rdbuf();
     }
 
-    EXPECT_THROW(
-        { builder.add_ingredient(R"({"title": "A.jpg", "relationship": "componentOf"})", ingredient); },
-        c2pa::C2paException);
+    EXPECT_NO_THROW(
+        { builder.add_ingredient(R"({"title": "A.jpg", "relationship": "componentOf"})", ingredient); });
+}
+
+TEST_F(BuilderTest, AddIngredientFromPathWithUnknownExtension) {
+    auto builder = make_builder();
+    fs::path ingredient = get_temp_path("ingredient-unknown.zzz");
+    {
+        std::ifstream src(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+        ASSERT_TRUE(src.is_open());
+        std::ofstream out(ingredient, std::ios::binary | std::ios::trunc);
+        ASSERT_TRUE(out.is_open());
+        out << src.rdbuf();
+    }
+
+    EXPECT_NO_THROW(
+        { builder.add_ingredient(R"({"title": "A.jpg", "relationship": "componentOf"})", ingredient); });
 }
 
 TEST_F(BuilderTest, AcceptsSupportedBareExtension) {
@@ -7686,5 +7745,104 @@ TEST_F(BuilderTest, ArchiveWithEmptyFormatThrows) {
         std::istringstream in(archive_bytes, std::ios::binary);
         auto ctx = std::make_shared<c2pa::Context>();
         EXPECT_THROW({ c2pa::Reader reader(ctx, "", in); }, c2pa::C2paException);
+    }
+}
+
+TEST_F(BuilderTest, SignProducesEquivalentManifestForEverySpelling) {
+    auto signer = c2pa_test::create_test_signer();
+
+    for (const std::string& format :
+         {"image/jpeg", "IMAGE/JPEG", "Image/Jpeg", "jpg", "JPG"}) {
+        auto builder = make_builder();
+
+        std::ifstream source(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+        ASSERT_TRUE(source.is_open());
+        std::stringstream dest(std::ios::in | std::ios::out | std::ios::binary);
+        ASSERT_NO_THROW({ builder.sign(format, source, dest, signer); }) << "format: " << format;
+
+        dest.seekg(0);
+        auto ctx = std::make_shared<c2pa::Context>();
+        c2pa::Reader reader(ctx, "image/jpeg", dest);
+
+        auto store = json::parse(reader.json());
+        const auto& active = store["manifests"][store["active_manifest"].get<std::string>()];
+        ASSERT_TRUE(active.contains("thumbnail"))
+            << "signing with " << format << " dropped the claim thumbnail";
+        EXPECT_EQ(active["thumbnail"]["format"], "image/jpeg");
+
+        // The reference must resolve to a real JPEG, not just be present.
+        std::stringstream thumbnail(std::ios::in | std::ios::out | std::ios::binary);
+        reader.get_resource(active["thumbnail"]["identifier"].get<std::string>(), thumbnail);
+        const std::string bytes = thumbnail.str();
+        EXPECT_GT(bytes.size(), 1000u)
+            << "signing with " << format << " produced an empty claim thumbnail";
+        ASSERT_GE(bytes.size(), 3u);
+        EXPECT_EQ(bytes.compare(0, 3, "\xff\xd8\xff"), 0)
+            << "signing with " << format << " produced a thumbnail that is not a JPEG";
+    }
+}
+
+TEST_F(BuilderTest, SidecarSignAcceptsUnknownFormat) {
+    // A sidecar manifest travels beside the asset, so the container never has
+    // to be parsed or rewritten and any format is signable.
+    auto signer = c2pa_test::create_test_signer();
+
+    for (const std::string& format : {std::string("application/zip"), std::string("zzz")}) {
+        auto builder = make_builder();
+        builder.set_no_embed();
+
+        std::ifstream source(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+        ASSERT_TRUE(source.is_open());
+        std::stringstream dest(std::ios::in | std::ios::out | std::ios::binary);
+
+        std::vector<unsigned char> manifest;
+        ASSERT_NO_THROW({ manifest = builder.sign(format, source, dest, signer); })
+            << "format: " << format;
+        EXPECT_FALSE(manifest.empty()) << "format: " << format;
+    }
+}
+
+// The boundary this binding enforces: a blank format is rejected wherever the
+// library would otherwise misclassify it, and nothing else is second-guessed.
+// Tightening the lax paths or loosening the strict ones fails one of these.
+
+TEST_F(BuilderTest, BlankFormatRejectedWhereItWouldMisclassify) {
+    auto signer = c2pa_test::create_test_signer();
+
+    for (const auto& blank : c2pa_test::kBlankFormats) {
+        auto builder = make_builder();
+        EXPECT_THROW({ builder.needs_placeholder(blank); }, c2pa::C2paException)
+            << "needs_placeholder accepted a blank format";
+        EXPECT_THROW({ builder.placeholder(blank); }, c2pa::C2paException)
+            << "placeholder accepted a blank format";
+
+        std::ifstream source(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+        ASSERT_TRUE(source.is_open());
+        std::stringstream dest(std::ios::in | std::ios::out | std::ios::binary);
+        EXPECT_THROW({ builder.sign(blank, source, dest, signer); }, c2pa::C2paException)
+            << "sign accepted a blank format";
+    }
+}
+
+TEST_F(BuilderTest, LaxPathsAcceptWhatTheLibraryAccepts) {
+    const auto readable = c2pa::Reader::supported_mime_types();
+    const auto writable = c2pa::Builder::supported_mime_types();
+
+    std::vector<std::string> formats{"application/zip", "zzz", "", "   "};
+    for (const auto& format : readable) {
+        if (std::find(writable.begin(), writable.end(), format) == writable.end()) {
+            formats.push_back(format);
+            break;
+        }
+    }
+
+    auto builder = make_builder();
+    for (const auto& format : formats) {
+        std::ifstream source(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+        ASSERT_TRUE(source.is_open());
+        EXPECT_NO_THROW({
+            builder.add_ingredient(R"({"title": "A.jpg", "relationship": "componentOf"})",
+                                   format, source);
+        }) << "add_ingredient rejected format: " << format;
     }
 }
