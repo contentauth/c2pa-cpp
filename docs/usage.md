@@ -21,7 +21,7 @@ The parameters are:
 - `<FORMAT>` - A MIME type or file extension for the stream, for example `image/jpeg` or `jpg`; see the [supported file formats](https://github.com/contentauth/c2pa-rs/blob/main/docs/supported-formats.md). Pass an empty string to take the format from the stream's leading bytes instead.
 - `<STREAM>` - An open readable iostream.
 
-Example of passing an empty string (or use a format-less overload) that takes no format, to ask the native core library to guess the format:
+Passing an empty string (or use a format-less overload of a `Reader`) asks the native core library to guess the format (the read will still fail if the format can't be guessed or is unsupported):
 
 ```cpp
 c2pa::Context context;
