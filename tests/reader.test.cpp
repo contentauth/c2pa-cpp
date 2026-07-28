@@ -1039,7 +1039,7 @@ TEST_F(ReaderTest, BlankFormatVariantsAreIndistinguishableOnFailure) {
 
     const std::string from_empty = message_for("");
     EXPECT_NE(from_empty, "<no exception>");
-    for (const std::string& blank : {" ", "   ", "\t", "\n", "\t\n ", "\r\n", "\v\f"}) {
+    for (const char* blank : {" ", "   ", "\t", "\n", "\t\n ", "\r\n", "\v\f"}) {
         EXPECT_EQ(message_for(blank), from_empty) << "blank variant: " << blank;
     }
 }

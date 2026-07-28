@@ -7763,7 +7763,7 @@ TEST_F(BuilderTest, ArchiveWithEmptyFormatThrows) {
 TEST_F(BuilderTest, SignProducesEquivalentManifestForEverySpelling) {
     auto signer = c2pa_test::create_test_signer();
 
-    for (const std::string& format :
+    for (const char* format :
          {"image/jpeg", "IMAGE/JPEG", "Image/Jpeg", "jpg", "JPG"}) {
         auto builder = make_builder();
 
