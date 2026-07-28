@@ -58,11 +58,12 @@ namespace c2pa
         }
 
         // Update reader with stream.
-        // Note: c2pa_reader_with_stream consumes the reader pointer.
+        // Note: c2pa_reader_with_stream consumes the reader pointer on success.
         C2paReader* updated = c2pa_reader_with_stream(c2pa_reader, resolved.c_str(), cpp_stream->c_stream);
-        c2pa_reader = nullptr;
         if (updated == nullptr) {
-            throw C2paException();
+            auto error = detail::error_from_failed_call(c2pa_reader);
+            c2pa_reader = nullptr;
+            throw error;
         }
         c2pa_reader = updated;
     }
@@ -94,11 +95,12 @@ namespace c2pa
             throw C2paException("Failed to create reader from context");
         }
 
-        // Note: c2pa_reader_with_stream consumes the reader pointer.
+        // Note: c2pa_reader_with_stream consumes the reader pointer on success.
         C2paReader* updated = c2pa_reader_with_stream(c2pa_reader, extension.c_str(), cpp_stream->c_stream);
-        c2pa_reader = nullptr;
         if (updated == nullptr) {
-            throw C2paException();
+            auto error = detail::error_from_failed_call(c2pa_reader);
+            c2pa_reader = nullptr;
+            throw error;
         }
         c2pa_reader = updated;
     }
@@ -126,16 +128,17 @@ namespace c2pa
             throw C2paException("Failed to create reader from context");
         }
 
-        // c2pa_reader_with_manifest_data_and_stream always consumes c2pa_reader.
+        // c2pa_reader_with_manifest_data_and_stream consumes c2pa_reader on success.
         C2paReader* updated = c2pa_reader_with_manifest_data_and_stream(
             c2pa_reader,
             resolved.c_str(),
             cpp_stream->c_stream,
             manifest_jumbf.data(),
             manifest_jumbf.size());
-        c2pa_reader = nullptr;
         if (updated == nullptr) {
-            throw C2paException();
+            auto error = detail::error_from_failed_call(c2pa_reader);
+            c2pa_reader = nullptr;
+            throw error;
         }
         c2pa_reader = updated;
 
@@ -209,9 +212,10 @@ namespace c2pa
             resolved.c_str(),
             main_wrapper.c_stream,
             fragment_wrapper.c_stream);
-        c2pa_reader = nullptr;
         if (updated == nullptr) {
-            throw C2paException();
+            auto error = detail::error_from_failed_call(c2pa_reader);
+            c2pa_reader = nullptr;
+            throw error;
         }
         c2pa_reader = updated;
 

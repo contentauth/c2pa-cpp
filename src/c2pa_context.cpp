@@ -183,9 +183,8 @@ namespace c2pa
         if (!raw) {
             throw C2paException("Signer is not valid");
         }
-
         if (c2pa_context_builder_set_signer(context_builder, raw) != 0) {
-            throw C2paException();
+            throw detail::error_from_failed_call(raw);
         }
         return *this;
     }
@@ -203,7 +202,7 @@ namespace c2pa
             throw C2paException("Failed to create HTTP resolver");
         }
         if (c2pa_context_builder_set_http_resolver(context_builder, resolver) != 0) {
-            throw C2paException();
+            throw detail::error_from_failed_call(resolver);
         }
         return *this;
     }
@@ -275,10 +274,13 @@ namespace c2pa
             throw C2paException("ContextBuilder is invalid (moved from)");
         }
 
-        // The C API consumes the context builder on build (success or failure).
+        // The C API consumes the context builder on build.
         C2paContext* ctx = c2pa_context_builder_build(context_builder);
-        context_builder = nullptr;
         if (!ctx) {
+            (void)detail::error_from_failed_call(context_builder);
+            context_builder = nullptr;
+            // The native builder is gone, so nothing can invoke the callback now.
+            pending_callback_.reset();
             throw C2paException("Failed to build context");
         }
 

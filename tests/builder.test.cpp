@@ -7597,6 +7597,51 @@ TEST_F(BuilderTest, SignTrimsPaddedFormat) {
     EXPECT_NO_THROW({ builder.sign(" \t image/jpeg \n ", source, dest, signer); });
 }
 
+TEST_F(BuilderTest, WithDefinitionReclaimsHandleWhenValidationFails) {
+    auto builder = make_builder();
+    C2paBuilder* original = builder.c2pa_builder();
+    ASSERT_NE(original, nullptr);
+
+    // Over MAX_CSTRING_LEN (1MB), so should be rejected.
+    const std::string oversized = "{\"x\":\"" + std::string(1100000, 'a') + "\"}";
+    EXPECT_THROW(builder.with_definition(oversized), c2pa::C2paException);
+
+    // The handle must already be freed, a second free must report "not tracked".
+    EXPECT_EQ(c2pa_free(original), -1)
+        << "native builder was still tracked after a failed with_definition: leaked";
+}
+
+TEST_F(BuilderTest, FailedConsumingCallKeepsTheLibraryErrorMessage) {
+    // A failed consuming call reclaims the handle, and c2pa_free() on a handle the
+    // library already took overwrites the thread-local error with its own
+    // "Other: UntrackedPointer: 0x...".
+    auto context = std::make_shared<c2pa::Context>();
+
+    // Provoked failure: the JSON passes argument validation, then fails to parse.
+    try {
+        c2pa::Builder builder(context, "{ this is not valid json ");
+        FAIL() << "expected malformed JSON to throw";
+    } catch (const c2pa::C2paException& e) {
+        const std::string message = e.what();
+        EXPECT_NE(message.find("Json:"), std::string::npos)
+            << "lost the library's parse error, got: " << message;
+        EXPECT_EQ(message.find("UntrackedPointer"), std::string::npos)
+            << "error slot was dirtied by the reclaiming free, got: " << message;
+    }
+
+    // Validation failure: rejected before the library takes the handle,
+    // so the reclaiming free succeeds and sets no error of its own.
+    const std::string oversized = "{\"x\":\"" + std::string(1100000, 'a') + "\"}";
+    try {
+        c2pa::Builder builder(context, oversized);
+        FAIL() << "expected an over-long manifest to throw";
+    } catch (const c2pa::C2paException& e) {
+        const std::string message = e.what();
+        EXPECT_NE(message.find("StringTooLong"), std::string::npos)
+            << "lost the library's length error, got: " << message;
+    }
+}
+
 TEST_F(BuilderTest, SignWithUnsupportedFormatThrows) {
     auto signer = c2pa_test::create_test_signer();
     auto builder = make_builder();

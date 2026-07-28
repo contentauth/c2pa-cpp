@@ -39,6 +39,22 @@ inline bool error_indicates_manifest_not_found(const char* message) noexcept {
     return message != nullptr && std::strstr(message, "ManifestNotFound") != nullptr;
 }
 
+/// @brief Finish with a handle whose consuming C API call failed: free it if the
+///        library left it to us, and return the error to throw.
+/// @param handle The handle passed to the failed call. Invalid once this returns,
+///        whichever side ended up freeing it, so the caller must drop its copy.
+/// @return The exception to throw, carrying the library's error message. Meant to be
+///         used directly: `throw detail::error_from_failed_call(handle);`.
+/// @details The exception is constructed before the free because a failing
+///          c2pa_free() overwrites the thread-local last error,
+///          which would replace the real failure message.
+template<typename Handle>
+[[nodiscard]] inline C2paException error_from_failed_call(Handle* handle) {
+    C2paException error;      // Capture the real error first.
+    c2pa_free(handle);        // Free only if still tracked, otherwise a no-op.
+    return error;
+}
+
 /// @brief Converts a C array of C strings to a std::vector of std::string.
 /// @param mime_types Pointer to an array of C strings (const char*).
 /// @param count Number of elements in the array.

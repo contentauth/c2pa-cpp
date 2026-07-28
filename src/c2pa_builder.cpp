@@ -52,11 +52,12 @@ namespace c2pa
 
         // Apply the manifest definition to the Builder.
         // Note: c2pa_builder_with_definition consumes the builder pointer on success
-        // and on operation failure.
+        // and on operation failure, but not when argument validation rejects the call.
         C2paBuilder* updated = c2pa_builder_with_definition(builder, manifest_json.c_str());
-        builder = nullptr;
         if (updated == nullptr) {
-            throw C2paException();
+            auto error = detail::error_from_failed_call(builder);
+            builder = nullptr;
+            throw error;
         }
         builder = updated;
     }
@@ -116,10 +117,11 @@ namespace c2pa
             throw C2paException();
         }
 
+        // base is a local, so no destructor reclaims it if this throws: a
+        // constructor that throws never gets ~Builder(). Free it here on failure.
         builder = c2pa_builder_with_archive(base, c_archive.c_stream);
-        base = nullptr;
         if (builder == nullptr) {
-            throw C2paException();
+            throw detail::error_from_failed_call(base);
         }
     }
 
@@ -152,8 +154,9 @@ namespace c2pa
         // c2pa_builder_with_definition consumes the builder pointer,
         // so the original pointer is invalid after the call.
         C2paBuilder* updated = c2pa_builder_with_definition(builder, manifest_json.c_str());
-        builder = nullptr;
         if (updated == nullptr) {
+            (void)detail::error_from_failed_call(builder);
+            builder = nullptr;
             throw C2paException("Failed to set builder definition");
         }
         builder = updated;
@@ -344,11 +347,12 @@ namespace c2pa
     {
         CppIStream c_archive(archive);
 
-        // c2pa_builder_with_archive consumes the builder pointer and returns a new one
+        // c2pa_builder_with_archive consumes the builder pointer, and returns a new one.
         C2paBuilder* updated = c2pa_builder_with_archive(builder, c_archive.c_stream);
-        builder = nullptr;
         if (updated == nullptr) {
-            throw C2paException();
+            auto error = detail::error_from_failed_call(builder);
+            builder = nullptr;
+            throw error;
         }
         builder = updated;
         return *this;
