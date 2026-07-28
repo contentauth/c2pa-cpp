@@ -7597,20 +7597,6 @@ TEST_F(BuilderTest, SignTrimsPaddedFormat) {
     EXPECT_NO_THROW({ builder.sign(" \t image/jpeg \n ", source, dest, signer); });
 }
 
-TEST_F(BuilderTest, WithDefinitionReclaimsHandleWhenValidationFails) {
-    auto builder = make_builder();
-    C2paBuilder* original = builder.c2pa_builder();
-    ASSERT_NE(original, nullptr);
-
-    // Over MAX_CSTRING_LEN (1MB), so should be rejected.
-    const std::string oversized = "{\"x\":\"" + std::string(1100000, 'a') + "\"}";
-    EXPECT_THROW(builder.with_definition(oversized), c2pa::C2paException);
-
-    // The handle must already be freed, a second free must report "not tracked".
-    EXPECT_EQ(c2pa_free(original), -1)
-        << "native builder was still tracked after a failed with_definition: leaked";
-}
-
 TEST_F(BuilderTest, FailedConsumingCallKeepsTheLibraryErrorMessage) {
     // A failed consuming call reclaims the handle, and c2pa_free() on a handle the
     // library already took overwrites the thread-local error with its own

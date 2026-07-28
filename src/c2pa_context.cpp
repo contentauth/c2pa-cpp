@@ -278,7 +278,6 @@ namespace c2pa
         C2paContext* ctx = c2pa_context_builder_build(context_builder);
         if (!ctx) {
             (void)detail::error_from_failed_call(context_builder);
-            context_builder = nullptr;
             // The native builder is gone, so nothing can invoke the callback now.
             pending_callback_.reset();
             throw C2paException("Failed to build context");

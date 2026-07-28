@@ -51,13 +51,12 @@ namespace c2pa
         init_from_context(context);
 
         // Apply the manifest definition to the Builder.
-        // Note: c2pa_builder_with_definition consumes the builder pointer on success
-        // and on operation failure, but not when argument validation rejects the call.
+        // Note: c2pa_builder_with_definition consumes the builder pointer on success.
+        // On failure the handle is only ours again when the library rejected it
+        // before taking ownership, which error_from_failed_call works out.
         C2paBuilder* updated = c2pa_builder_with_definition(builder, manifest_json.c_str());
         if (updated == nullptr) {
-            auto error = detail::error_from_failed_call(builder);
-            builder = nullptr;
-            throw error;
+            throw detail::error_from_failed_call(builder);
         }
         builder = updated;
     }
@@ -156,7 +155,6 @@ namespace c2pa
         C2paBuilder* updated = c2pa_builder_with_definition(builder, manifest_json.c_str());
         if (updated == nullptr) {
             (void)detail::error_from_failed_call(builder);
-            builder = nullptr;
             throw C2paException("Failed to set builder definition");
         }
         builder = updated;
@@ -350,9 +348,7 @@ namespace c2pa
         // c2pa_builder_with_archive consumes the builder pointer, and returns a new one.
         C2paBuilder* updated = c2pa_builder_with_archive(builder, c_archive.c_stream);
         if (updated == nullptr) {
-            auto error = detail::error_from_failed_call(builder);
-            builder = nullptr;
-            throw error;
+            throw detail::error_from_failed_call(builder);
         }
         builder = updated;
         return *this;

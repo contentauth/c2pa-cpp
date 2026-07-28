@@ -39,19 +39,48 @@ inline bool error_indicates_manifest_not_found(const char* message) noexcept {
     return message != nullptr && std::strstr(message, "ManifestNotFound") != nullptr;
 }
 
-/// @brief Finish with a handle whose consuming C API call failed: free it if the
-///        library left it to us, and return the error to throw.
-/// @param handle The handle passed to the failed call. Invalid once this returns,
-///        whichever side ended up freeing it, so the caller must drop its copy.
+/// @brief Error prefixes the library reports when it rejects a handle
+///        before taking ownership, leaving the handle ours to free.
+/// @details Any other error means the library took the handle and dropped it itself.
+///          Both entries say the library never took the handle, so it is still ours
+///          and we remain responsible for releasing it.
+inline constexpr const char *kPreConsumeErrorTags[] = {
+    "UntrackedPointer:",  // handle not in the registry
+    "WrongPointerType:",  // handle tracked under a different type
+};
+
+/// @brief True when @p message says the library rejected the handle before
+///        taking ownership.
+/// @param message The library's error text, or nullptr when it reported none.
+/// @return False for nullptr: with no error, assume the handle was consumed.
+inline bool is_pre_consume_error(const char *message) noexcept {
+    if (message == nullptr) {
+        return false;
+    }
+    for (const char *tag : kPreConsumeErrorTags) {
+        if (std::strstr(message, tag) != nullptr) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// @brief Finish with a handle whose consuming C API call failed: release it if
+///        the library left it to us, and return the error to throw.
+/// @param handle The handle passed to the failed call, set to null before this
+///        returns. Invalid either way afterwards, whichever side released it.
 /// @return The exception to throw, carrying the library's error message. Meant to be
 ///         used directly: `throw detail::error_from_failed_call(handle);`.
 /// @details The exception is constructed before the free because a failing
 ///          c2pa_free() overwrites the thread-local last error,
 ///          which would replace the real failure message.
 template<typename Handle>
-[[nodiscard]] inline C2paException error_from_failed_call(Handle* handle) {
-    C2paException error;      // Capture the real error first.
-    c2pa_free(handle);        // Free only if still tracked, otherwise a no-op.
+[[nodiscard]] inline C2paException error_from_failed_call(Handle*& handle) {
+    C2paException error;
+    if (is_pre_consume_error(error.what())) {
+        c2pa_free(handle);
+    }
+    handle = nullptr;
     return error;
 }
 
