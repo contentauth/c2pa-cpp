@@ -1044,52 +1044,48 @@ TEST_F(ReaderTest, BlankFormatVariantsAreIndistinguishableOnFailure) {
     }
 }
 
-TEST_F(ReaderTest, PaddedFormatIsRejectedNotTrimmed) {
-    // Padding is preserved, so a padded format stays invalid.
+TEST_F(ReaderTest, PaddedFormatIsTrimmed) {
+    // Padding is never meaningful in a format, so it is trimmed before the
+    // format reaches the library, which does no trimming of its own.
     std::string bytes = fixture_bytes("C.jpg");
     std::istringstream stream(bytes, std::ios::binary);
+    std::istringstream clean(bytes, std::ios::binary);
 
-    try {
-        c2pa::Reader reader("  image/jpeg  ", stream);
-        FAIL() << "Expected a padded format to be rejected";
-    } catch (const c2pa::C2paException& e) {
-        EXPECT_NE(std::string(e.what()).find("image/jpeg"), std::string::npos);
-    }
+    c2pa::Reader padded(std::make_shared<c2pa::Context>(), " \t image/jpeg \n ", stream);
+    c2pa::Reader exact(std::make_shared<c2pa::Context>(), "image/jpeg", clean);
+    EXPECT_EQ(padded.json(), exact.json());
 }
 
-TEST_F(ReaderTest, UnsupportedFormatOnStreamThrows) {
-    // The bytes are a valid signed JPEG, so only the format check can throw.
+TEST_F(ReaderTest, PaddedUnknownFormatStillDefersToContent) {
+    // Trimming does not make an unknown format known; content detection is
+    // still what resolves the container.
     std::string bytes = fixture_bytes("C.jpg");
     std::istringstream stream(bytes, std::ios::binary);
-    EXPECT_THROW({ c2pa::Reader reader("application/zip", stream); }, c2pa::C2paException);
+    std::istringstream clean(bytes, std::ios::binary);
+
+    c2pa::Reader padded(std::make_shared<c2pa::Context>(), "  application/zip  ", stream);
+    c2pa::Reader exact(std::make_shared<c2pa::Context>(), "image/jpeg", clean);
+    EXPECT_EQ(padded.json(), exact.json());
 }
 
-TEST_F(ReaderTest, SuppliedFormatEnforcedButDerivedIsNot) {
-    // A supplied format is the caller's claim about the data, so it is checked.
-    // A derived extension only describes the filename, so it is left alone.
+TEST_F(ReaderTest, UnsupportedFormatOnStreamDefersToContent) {
+    // The library reconciles the hint against the container it detects.
     std::string bytes = fixture_bytes("C.jpg");
     std::istringstream stream(bytes, std::ios::binary);
-    EXPECT_THROW({ c2pa::Reader reader("zzz", stream); }, c2pa::C2paException);
+    std::istringstream clean(bytes, std::ios::binary);
+
+    c2pa::Reader mismatched(std::make_shared<c2pa::Context>(), "application/zip", stream);
+    c2pa::Reader exact(std::make_shared<c2pa::Context>(), "image/jpeg", clean);
+    EXPECT_EQ(mismatched.json(), exact.json());
+}
+
+TEST_F(ReaderTest, SuppliedAndDerivedFormatsBothDeferToContent) {
+    std::string bytes = fixture_bytes("C.jpg");
+    std::istringstream stream(bytes, std::ios::binary);
+    EXPECT_NO_THROW({ c2pa::Reader reader(std::make_shared<c2pa::Context>(), "zzz", stream); });
 
     fs::path odd = copy_fixture_to("C.jpg", "detect-asymmetry.zzz");
     EXPECT_NO_THROW({ c2pa::Reader reader(odd); });
-}
-
-TEST_F(ReaderTest, UnsupportedFormatMessageNamesFormatNotPath) {
-    // Paths may hold sensitive data, so they never appear in messages.
-    fs::path asset = copy_fixture_to("C.jpg", "detect-message-probe.jpg");
-    std::ifstream file(asset, std::ios::binary);
-    ASSERT_TRUE(file.is_open());
-
-    try {
-        c2pa::Reader reader("application/zip", file);
-        FAIL() << "Expected an unsupported format to be rejected";
-    } catch (const c2pa::C2paException& e) {
-        const std::string msg = e.what();
-        EXPECT_NE(msg.find("application/zip"), std::string::npos);
-        EXPECT_EQ(msg.find(asset.string()), std::string::npos) << msg;
-        EXPECT_EQ(msg.find("detect-message-probe"), std::string::npos) << msg;
-    }
 }
 
 TEST_F(ReaderTest, NoFormatOverloadDetectsFromContent) {

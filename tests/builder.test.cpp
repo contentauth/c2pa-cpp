@@ -7585,6 +7585,18 @@ TEST_F(BuilderTest, SignDoesNotTruncateDestinationWhenFormatIsRejected) {
     EXPECT_EQ(after.str(), original);
 }
 
+TEST_F(BuilderTest, SignTrimsPaddedFormat) {
+    // Trim stray whitespaces in format.
+    auto signer = c2pa_test::create_test_signer();
+    auto builder = make_builder();
+
+    std::ifstream source(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+    ASSERT_TRUE(source.is_open());
+    std::stringstream dest(std::ios::in | std::ios::out | std::ios::binary);
+
+    EXPECT_NO_THROW({ builder.sign(" \t image/jpeg \n ", source, dest, signer); });
+}
+
 TEST_F(BuilderTest, SignWithUnsupportedFormatThrows) {
     auto signer = c2pa_test::create_test_signer();
     auto builder = make_builder();

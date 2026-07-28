@@ -24,6 +24,7 @@
 #include <fstream>
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <memory>
 
@@ -250,28 +251,35 @@ inline std::string extract_file_extension(const std::filesystem::path &path) noe
 /// @details The C API rejects a null format, so absent must be spelled empty.
 inline constexpr const char *kDetectFormatFromContent = "";
 
-/// @brief True when a format is absent, i.e. empty or only ASCII whitespace.
+/// @brief ASCII whitespace ignored around a format.
 /// @details Formats are MIME types or extensions, so non-ASCII spaces are
 ///          deliberately excluded.
-inline bool is_blank_format(const std::string &format) noexcept {
-    return format.find_first_not_of(" \t\n\r\f\v") == std::string::npos;
+inline constexpr const char *kFormatWhitespace = " \t\n\r\f\v";
+
+/// @brief The format with surrounding whitespace removed, empty when blank.
+[[nodiscard]] inline std::string_view trim_format(const std::string &format) noexcept {
+    const auto first = format.find_first_not_of(kFormatWhitespace);
+    if (first == std::string::npos) {
+        return {};  // Empty or all whitespace.
+    }
+    const auto last = format.find_last_not_of(kFormatWhitespace);
+    return std::string_view(format).substr(first, last - first + 1);
 }
 
-/// @brief Validate a caller-supplied format and normalize it.
+/// @brief True when a format is absent, i.e. empty or only ASCII whitespace.
+inline bool is_blank_format(const std::string &format) noexcept {
+    return trim_format(format).empty();
+}
+
+/// @brief Normalize a caller-supplied format for the C FFI.
 /// @param format The format supplied by, or derived for, the caller.
-/// @param supported Formats accepted here. When empty the check is skipped.
 /// @param allow_detection Whether a blank format may request content detection.
-/// @return Empty when @p format is blank, otherwise @p format lowercased.
-/// @throws C2paException if @p format is blank and @p allow_detection is false,
-///         or if a non-blank @p format is not in a non-empty @p supported.
-/// @details The returned value reaches the C API, so it is the canonical
-///          lowercase form. Some library paths match a MIME type case
-///          sensitively and silently skip work when it does not match.
-///          Error messages keep the caller's spelling.
-[[nodiscard]] inline std::string validate_format(const std::string &format,
-                                                 const std::vector<std::string> &supported,
-                                                 bool allow_detection) {
-    if (is_blank_format(format)) {
+/// @return Empty when @p format is blank, otherwise @p format trimmed and lowercased.
+/// @throws C2paException if @p format is blank and @p allow_detection is false.
+[[nodiscard]] inline std::string normalize_format(const std::string &format,
+                                                  bool allow_detection) {
+    const std::string_view trimmed = trim_format(format);
+    if (trimmed.empty()) {
         if (!allow_detection) {
             throw C2paException("An explicit format is required.");
         }
@@ -279,71 +287,28 @@ inline bool is_blank_format(const std::string &format) noexcept {
         return std::string();
     }
 
-    std::string lowered = format;
-    std::transform(lowered.begin(), lowered.end(), lowered.begin(),
+    std::string normalized(trimmed);
+    std::transform(normalized.begin(), normalized.end(), normalized.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-
-    if (supported.empty()) {
-        // List unavailable; defer to the library's own validation.
-        return lowered;
-    }
-
-    if (std::find(supported.begin(), supported.end(), lowered) == supported.end()) {
-        throw C2paException("Unsupported format \"" + format + "\".");
-    }
-    return lowered;
-}
-
-/// @brief Formats accepted for reading, queried once from the C2PA library.
-/// @return The supported formats, or an empty vector if the library reported none.
-/// @details Fixed for the lifetime of the loaded library, so it is cached. Backs
-///          a message-quality check on the Reader rather than an authority on
-///          what the library accepts. An empty result skips that check.
-inline const std::vector<std::string> &supported_reader_formats() {
-    static const std::vector<std::string> formats = [] {
-        try {
-            uintptr_t count = 0;
-            const char *const *ptr = c2pa_reader_supported_mime_types(&count);
-            return c_mime_types_to_vector(ptr, count);
-        } catch (...) {
-            return std::vector<std::string>{};
-        }
-    }();
-    return formats;
-}
-
-/// @brief Formats accepted for signing, queried once from the C2PA library.
-/// @return The supported formats, or an empty vector if the library reported none.
-/// @details Cached to serve Builder::supported_mime_types().
-inline const std::vector<std::string> &supported_builder_formats() {
-    static const std::vector<std::string> formats = [] {
-        try {
-            uintptr_t count = 0;
-            const char *const *ptr = c2pa_builder_supported_mime_types(&count);
-            return c_mime_types_to_vector(ptr, count);
-        } catch (...) {
-            return std::vector<std::string>{};
-        }
-    }();
-    return formats;
+    return normalized;
 }
 
 /// @brief Resolve a format for reading, letting a blank one request detection.
 [[nodiscard]] inline std::string resolve_reader_format(const std::string &format) {
-    return validate_format(format, supported_reader_formats(), true);
+    return normalize_format(format, true);
 }
 
 /// @brief Resolve a format that must be stated. These paths never infer the
 ///        container type from content, so a blank format is rejected.
 [[nodiscard]] inline std::string require_explicit_format(const std::string &format) {
-    return validate_format(format, {}, false);
+    return normalize_format(format, false);
 }
 
 /// @brief Normalize an extension derived from a filename (path).
 /// @details The extension describes the filename rather than the data.
 ///          Content detection overrides a wrong one.
 [[nodiscard]] inline std::string normalize_derived_extension(const std::string &extension) {
-    return validate_format(extension, {}, true);
+    return normalize_format(extension, true);
 }
 
 /// @brief Convert C string result to C++ string with cleanup
