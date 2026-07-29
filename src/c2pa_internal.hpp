@@ -240,8 +240,6 @@ inline std::unique_ptr<StreamType> open_file_binary(const std::filesystem::path 
 /// @brief Extract file extension without the leading dot
 /// @param path Filesystem path
 /// @return Extension string (e.g., "jpg" not ".jpg")
-/// @details Empty when the path has no extension, which asks the library to
-///          determine the container type from the asset's leading bytes.
 inline std::string extract_file_extension(const std::filesystem::path &path) noexcept {
     auto ext = path.extension().string();
     return ext.empty() ? "" : ext.substr(1);
@@ -266,44 +264,34 @@ inline constexpr const char *kFormatWhitespace = " \t\n\r\f\v";
     return std::string_view(format).substr(first, last - first + 1);
 }
 
-/// @brief Normalize a caller-supplied format for the C FFI.
-/// @param format The format supplied by, or derived for, the caller.
-/// @param allow_detection Whether a blank format may request content detection.
-/// @return Empty when @p format is blank, otherwise @p format trimmed and lowercased.
-/// @throws C2paException if @p format is blank and @p allow_detection is false.
-[[nodiscard]] inline std::string normalize_format(const std::string &format,
-                                                  bool allow_detection) {
+/// @brief Trim and lowercase a caller-supplied format; empty when @p format is blank.
+/// @details Empty means detection from content, so this alone is enough wherever
+///          a blank format is allowed to request that.
+[[nodiscard]] inline std::string normalize_format(const std::string &format) {
     const std::string_view trimmed = trim_format(format);
-    if (trimmed.empty()) {
-        if (!allow_detection) {
-            throw C2paException("An explicit format is required.");
-        }
-        // Blank hint for the native core lib to attempt guessing the format.
-        return std::string();
-    }
-
     std::string normalized(trimmed);
     std::transform(normalized.begin(), normalized.end(), normalized.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return normalized;
 }
 
-/// @brief Resolve a format for reading, letting a blank one request detection.
-[[nodiscard]] inline std::string resolve_detectable_format(const std::string &format) {
-    return normalize_format(format, true);
-}
-
 /// @brief Resolve a format that must be stated. These paths never infer the
 ///        container type from content, so a blank format is rejected.
+/// @return @p format trimmed and lowercased.
+/// @throws C2paException if @p format is blank.
 [[nodiscard]] inline std::string resolve_format(const std::string &format) {
-    return normalize_format(format, false);
+    std::string normalized = normalize_format(format);
+    if (normalized.empty()) {
+        throw C2paException("An explicit format is required.");
+    }
+    return normalized;
 }
 
 /// @brief Normalize an extension derived from a filename (path).
 /// @details The extension describes the filename rather than the data.
 ///          Content detection overrides a wrong one.
 [[nodiscard]] inline std::string normalize_derived_extension(const std::string &extension) {
-    return normalize_format(extension, true);
+    return normalize_format(extension);
 }
 
 /// @brief Convert C string result to C++ string with cleanup

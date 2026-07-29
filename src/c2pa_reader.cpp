@@ -47,7 +47,7 @@ namespace c2pa
         }
 
         // Validate before acquiring anything.
-        const std::string resolved = detail::resolve_detectable_format(format);
+        const std::string resolved = detail::normalize_format(format);
 
         // Create the stream wrapper before the reader handle
         cpp_stream = std::make_unique<CppIStream>(stream);
@@ -221,7 +221,7 @@ namespace c2pa
 
     Reader::Reader(const std::string &format, std::istream &stream)
     {
-        const std::string resolved = detail::resolve_detectable_format(format);
+        const std::string resolved = detail::normalize_format(format);
 
         cpp_stream = std::make_unique<CppIStream>(stream);
         c2pa_reader = c2pa_reader_from_stream(resolved.c_str(), cpp_stream->c_stream);
