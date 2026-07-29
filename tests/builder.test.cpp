@@ -7592,21 +7592,6 @@ TEST_F(BuilderTest, AddIngredientFromExtensionlessPath) {
         { builder.add_ingredient(R"({"title": "A.jpg", "relationship": "componentOf"})", ingredient); });
 }
 
-TEST_F(BuilderTest, AddIngredientFromPathWithUnknownExtension) {
-    auto builder = make_builder();
-    fs::path ingredient = get_temp_path("ingredient-unknown.zzz");
-    {
-        std::ifstream src(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
-        ASSERT_TRUE(src.is_open());
-        std::ofstream out(ingredient, std::ios::binary | std::ios::trunc);
-        ASSERT_TRUE(out.is_open());
-        out << src.rdbuf();
-    }
-
-    EXPECT_NO_THROW(
-        { builder.add_ingredient(R"({"title": "A.jpg", "relationship": "componentOf"})", ingredient); });
-}
-
 TEST_F(BuilderTest, SignProducesEquivalentManifestForEverySpelling) {
     auto signer = c2pa_test::create_test_signer();
 

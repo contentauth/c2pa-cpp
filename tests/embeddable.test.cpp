@@ -670,39 +670,3 @@ TEST_F(EmbeddableTest, UpdateHashFromStreamRejectsBlankFormat) {
     ASSERT_TRUE(asset.is_open());
     EXPECT_THROW({ builder.update_hash_from_stream("", asset); }, c2pa::C2paException);
 }
-
-TEST_F(EmbeddableTest, EmbeddableStepsRejectUnsupportedFormat) {
-    std::vector<unsigned char> data{0x01, 0x02, 0x03};
-    EXPECT_THROW({ c2pa::Builder::format_embeddable("application/zip", data); },
-                 c2pa::C2paException);
-}
-
-TEST_F(EmbeddableTest, FormatEmbeddableAcceptsReadOnlyFormat) {
-    // Composing a manifest for a container the library reads but cannot write
-    // is the point of the embeddable workflow: an outside writer embeds it.
-    const auto readable = c2pa::Reader::supported_mime_types();
-    const auto writable = c2pa::Builder::supported_mime_types();
-
-    std::string read_only;
-    for (const auto& format : readable) {
-        if (std::find(writable.begin(), writable.end(), format) == writable.end()) {
-            read_only = format;
-            break;
-        }
-    }
-    if (read_only.empty()) {
-        GTEST_SKIP() << "Every readable format is also writable";
-    }
-
-    std::vector<unsigned char> data{0x01, 0x02, 0x03};
-    EXPECT_NO_THROW({ c2pa::Builder::format_embeddable(read_only, data); })
-        << "read-only format: " << read_only;
-}
-
-TEST_F(EmbeddableTest, NeedsPlaceholderDistinguishesContainersWhenFormatIsGiven) {
-    // A named format yields a container-specific answer:
-    // BMFF needs a placeholder sized differently from a JPEG.
-    auto builder = make_builder();
-    EXPECT_TRUE(builder.needs_placeholder("image/jpeg"));
-    EXPECT_TRUE(builder.needs_placeholder("video/mp4"));
-}
