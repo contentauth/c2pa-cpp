@@ -254,22 +254,16 @@ inline constexpr const char *kDetectFormatFromContent = "";
 ///          deliberately excluded.
 inline constexpr const char *kFormatWhitespace = " \t\n\r\f\v";
 
-/// @brief The format with surrounding whitespace removed, empty when blank.
-[[nodiscard]] inline std::string_view trim_format(const std::string &format) noexcept {
+/// @brief Trim and lowercase a caller-supplied format; empty when @p format is blank.
+/// @details Empty means detection from content, so this alone is enough wherever
+///          a blank format is allowed to request that.
+[[nodiscard]] inline std::string normalize_format(const std::string &format) {
     const auto first = format.find_first_not_of(kFormatWhitespace);
     if (first == std::string::npos) {
         return {};  // Empty or all whitespace.
     }
     const auto last = format.find_last_not_of(kFormatWhitespace);
-    return std::string_view(format).substr(first, last - first + 1);
-}
-
-/// @brief Trim and lowercase a caller-supplied format; empty when @p format is blank.
-/// @details Empty means detection from content, so this alone is enough wherever
-///          a blank format is allowed to request that.
-[[nodiscard]] inline std::string normalize_format(const std::string &format) {
-    const std::string_view trimmed = trim_format(format);
-    std::string normalized(trimmed);
+    std::string normalized(std::string_view(format).substr(first, last - first + 1));
     std::transform(normalized.begin(), normalized.end(), normalized.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return normalized;

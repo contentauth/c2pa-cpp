@@ -197,7 +197,6 @@ namespace c2pa
     {
         ensure_initialized();
 
-        // format can't be auto-detected here
         const std::string resolved = detail::resolve_format(format);
 
         CppIStream main_wrapper(stream);
