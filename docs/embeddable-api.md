@@ -80,7 +80,7 @@ When `needs_placeholder()` returns `false`, the standard `Builder::sign()` flow 
 
 - The application controls its own write pipeline (e.g., a video transcoder or streaming ingest service) and wants to hash the asset during its own write pass rather than having the SDK re-read the finished file.
 - The application needs to receive the raw signed manifest bytes and decide where and how to append them as a new chunk, rather than letting the SDK write to a destination path.
-- The application produces the asset incrementally, so it can pass the stream to `update_hash_from_stream()` at the right moment, then call `sign_embeddable()` to get the manifest without a second full read.
+- Using the SDK, the application produces the asset incrementally, so it can pass the stream to `update_hash_from_stream()` at the right moment, then call `sign_embeddable()` to get the manifest without a second full read.
 
 <!-- 
 The `prefer_box_hash` setting can be provided in a JSON settings file:
