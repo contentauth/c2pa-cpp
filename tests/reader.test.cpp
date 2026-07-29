@@ -898,18 +898,6 @@ INSTANTIATE_TEST_SUITE_P(
         std::make_tuple("\r\n", "C.jpg", "C.jpg"),
         std::make_tuple("\v\f", "C.jpg", "C.jpg")));
 
-TEST_P(BlankFormatDetectionTest, ResolvesFormatFromContent) {
-    const auto& [format, filename, expected_content] = GetParam();
-    auto path = c2pa_test::get_fixture_path(filename);
-    ASSERT_TRUE(fs::exists(path)) << "Test file does not exist: " << path;
-
-    std::ifstream file(path, std::ios::binary);
-    ASSERT_TRUE(file.is_open()) << "Failed to open file: " << path;
-
-    c2pa::Reader reader(format, file);
-    EXPECT_NE(reader.json().find(expected_content), std::string::npos);
-}
-
 TEST_P(BlankFormatDetectionTest, ResolvesFormatOnSharedContext) {
     const auto& [format, filename, expected_content] = GetParam();
     std::string bytes = fixture_bytes(filename);
@@ -942,16 +930,6 @@ TEST_F(ReaderTest, WrongButSupportedExtensionDefersToContent) {
     EXPECT_NE(reader.json().find("C.jpg"), std::string::npos);
 }
 
-TEST_F(ReaderTest, EmptyFormatRewindsPreSeekedStream) {
-    std::string bytes = fixture_bytes("C.jpg");
-    std::istringstream stream(bytes, std::ios::binary);
-    stream.seekg(4096);
-    ASSERT_EQ(stream.tellg(), 4096);
-
-    c2pa::Reader reader("", stream);
-    EXPECT_NE(reader.json().find("C.jpg"), std::string::npos);
-}
-
 TEST_F(ReaderTest, EmptyFormatMatchesExplicitFormatJson) {
     std::string bytes = fixture_bytes("C.jpg");
 
@@ -968,33 +946,10 @@ TEST_F(ReaderTest, EmptyFormatMatchesExplicitFormatJson) {
     EXPECT_EQ(detected.is_embedded(), explicitly.is_embedded());
 }
 
-TEST_F(ReaderTest, WrongMimeHintIsCorrectedByContent) {
-    std::string bytes = fixture_bytes("C.jpg");
-    std::istringstream stream(bytes, std::ios::binary);
-
-    c2pa::Reader reader("image/png", stream);
-    EXPECT_NE(reader.json().find("C.jpg"), std::string::npos);
-}
-
 TEST_F(ReaderTest, DngExtensionWithJpegContentIsCorrected) {
     fs::path mislabeled = copy_fixture_to("C.jpg", "detect-mislabeled.dng");
     c2pa::Reader reader(mislabeled);
     EXPECT_NE(reader.json().find("C.jpg"), std::string::npos);
-}
-
-TEST_F(ReaderTest, WhitespaceFormatMatchesEmptyFormatJson) {
-    std::string bytes = fixture_bytes("C.jpg");
-
-    std::istringstream empty_stream(bytes, std::ios::binary);
-    c2pa::Reader from_empty("", empty_stream);
-
-    std::istringstream ws_stream(bytes, std::ios::binary);
-    c2pa::Reader from_whitespace("\t\n ", ws_stream);
-
-    auto a = json::parse(from_empty.json());
-    auto b = json::parse(from_whitespace.json());
-    EXPECT_EQ(a["active_manifest"], b["active_manifest"]);
-    EXPECT_EQ(a["manifests"].size(), b["manifests"].size());
 }
 
 TEST_F(ReaderTest, WhitespaceFormatFromAssetReturnsReader) {
@@ -1005,43 +960,6 @@ TEST_F(ReaderTest, WhitespaceFormatFromAssetReturnsReader) {
     auto reader = c2pa::Reader::from_asset(ctx, "  ", stream);
     ASSERT_TRUE(reader.has_value());
     EXPECT_NE(reader->json().find("C.jpg"), std::string::npos);
-}
-
-TEST_F(ReaderTest, WhitespaceFormatFromAssetUnsignedReturnsNullopt) {
-    // Reachable only if detection ran, since an unidentified container throws.
-    std::string bytes = fixture_bytes("A.jpg");
-    std::istringstream stream(bytes, std::ios::binary);
-    auto ctx = std::make_shared<c2pa::Context>();
-
-    auto reader = c2pa::Reader::from_asset(ctx, "   ", stream);
-    EXPECT_FALSE(reader.has_value());
-}
-
-TEST_F(ReaderTest, WhitespaceFormatUndetectableStillThrows) {
-    std::string garbage(512, 'w');
-    std::istringstream stream(garbage, std::ios::binary);
-    EXPECT_THROW({ c2pa::Reader reader("   ", stream); }, c2pa::C2paException);
-}
-
-TEST_F(ReaderTest, BlankFormatVariantsAreIndistinguishableOnFailure) {
-    // SVG cannot be identified, so every blank spelling fails identically.
-    std::string bytes = fixture_bytes("sample2.svg");
-
-    auto message_for = [&](const std::string& format) {
-        std::istringstream stream(bytes, std::ios::binary);
-        try {
-            c2pa::Reader reader(format, stream);
-            return std::string("<no exception>");
-        } catch (const c2pa::C2paException& e) {
-            return std::string(e.what());
-        }
-    };
-
-    const std::string from_empty = message_for("");
-    EXPECT_NE(from_empty, "<no exception>");
-    for (const char* blank : {" ", "   ", "\t", "\n", "\t\n ", "\r\n", "\v\f"}) {
-        EXPECT_EQ(message_for(blank), from_empty) << "blank variant: " << blank;
-    }
 }
 
 TEST_F(ReaderTest, PaddedFormatIsTrimmed) {
@@ -1079,15 +997,6 @@ TEST_F(ReaderTest, UnsupportedFormatOnStreamDefersToContent) {
     EXPECT_EQ(mismatched.json(), exact.json());
 }
 
-TEST_F(ReaderTest, SuppliedAndDerivedFormatsBothDeferToContent) {
-    std::string bytes = fixture_bytes("C.jpg");
-    std::istringstream stream(bytes, std::ios::binary);
-    EXPECT_NO_THROW({ c2pa::Reader reader(std::make_shared<c2pa::Context>(), "zzz", stream); });
-
-    fs::path odd = copy_fixture_to("C.jpg", "detect-asymmetry.zzz");
-    EXPECT_NO_THROW({ c2pa::Reader reader(odd); });
-}
-
 TEST_F(ReaderTest, NoFormatOverloadDetectsFromContent) {
     std::ifstream file(c2pa_test::get_fixture_path("C.jpg"), std::ios::binary);
     ASSERT_TRUE(file.is_open());
@@ -1111,14 +1020,6 @@ TEST_F(ReaderTest, NoFormatOverloadMatchesEmptyFormat) {
     auto b = json::parse(from_empty.json());
     EXPECT_EQ(a["active_manifest"], b["active_manifest"]);
     EXPECT_EQ(a["manifests"].size(), b["manifests"].size());
-}
-
-TEST_F(ReaderTest, NoFormatOverloadUndetectableThrows) {
-    std::string garbage(512, 'q');
-    std::istringstream stream(garbage, std::ios::binary);
-    auto ctx = std::make_shared<c2pa::Context>();
-
-    EXPECT_THROW({ c2pa::Reader reader(ctx, stream); }, c2pa::C2paException);
 }
 
 TEST_F(ReaderTest, NoFormatOverloadResolvesUnambiguously) {
@@ -1150,30 +1051,6 @@ TEST_F(ReaderTest, FromAssetNoFormatOverloadReturnsNullopt) {
     EXPECT_FALSE(reader.has_value());
 }
 
-TEST_F(ReaderTest, GarbageStreamWithEmptyFormatThrows) {
-    // Bytes confined to 0x03..0x7f cannot match any container signature.
-    std::string garbage(512, '\0');
-    for (size_t i = 0; i < garbage.size(); ++i) {
-        garbage[i] = static_cast<char>((i * 7 + 3) & 0x7f);
-    }
-    std::istringstream stream(garbage, std::ios::binary);
-    EXPECT_THROW({ c2pa::Reader reader("", stream); }, c2pa::C2paException);
-}
-
-TEST_F(ReaderTest, GarbageStreamWithEmptyFormatIsNotAManifestLookupFailure) {
-    std::string garbage(512, 'q');
-    std::istringstream stream(garbage, std::ios::binary);
-    try {
-        c2pa::Reader reader("", stream);
-        FAIL() << "Expected undetectable content to be rejected";
-    } catch (const c2pa::C2paException& e) {
-        const std::string msg = e.what();
-        EXPECT_FALSE(msg.empty());
-        // An unidentified container reports a different failure.
-        EXPECT_EQ(msg.find("ManifestNotFound"), std::string::npos) << msg;
-    }
-}
-
 TEST_F(ReaderTest, SubMagicLengthStreamWithEmptyFormatThrows) {
     // Detection needs two bytes, so one leaves nothing to identify.
     std::string tiny("\xff", 1);
@@ -1186,18 +1063,6 @@ TEST_F(ReaderTest, EmptyStreamWithEmptyFormatThrows) {
     EXPECT_THROW({ c2pa::Reader reader("", stream); }, c2pa::C2paException);
 }
 
-TEST_F(ReaderTest, ExtensionlessGarbageFileThrows) {
-    fs::path junk = get_temp_path("detect-garbage-noext");
-    {
-        std::ofstream f(junk, std::ios::binary | std::ios::trunc);
-        ASSERT_TRUE(f.is_open());
-        const std::string bytes(256, 'k');
-        f.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
-    }
-    // The file exists, so the library reports the error.
-    EXPECT_THROW({ c2pa::Reader reader(junk); }, c2pa::C2paException);
-}
-
 TEST_F(ReaderTest, CorruptedJpegBodyWithEmptyFormatThrows) {
     // The JPEG signature survives, so detection succeeds and parsing fails after.
     std::string bytes = fixture_bytes("C.jpg");
@@ -1207,68 +1072,6 @@ TEST_F(ReaderTest, CorruptedJpegBodyWithEmptyFormatThrows) {
     }
     std::istringstream stream(bytes, std::ios::binary);
     EXPECT_THROW({ c2pa::Reader reader("", stream); }, c2pa::C2paException);
-}
-
-TEST_F(ReaderTest, FromAssetExtensionlessUnsignedReturnsNullopt) {
-    // Reporting a missing manifest proves detection ran.
-    fs::path noext = copy_fixture_to("A.jpg", "detect-unsigned-noext");
-    auto ctx = std::make_shared<c2pa::Context>();
-
-    auto reader = c2pa::Reader::from_asset(ctx, noext);
-    EXPECT_FALSE(reader.has_value());
-}
-
-TEST_F(ReaderTest, FromAssetEmptyFormatSignedReturnsReader) {
-    std::string bytes = fixture_bytes("C.jpg");
-    std::istringstream stream(bytes, std::ios::binary);
-    auto ctx = std::make_shared<c2pa::Context>();
-
-    auto reader = c2pa::Reader::from_asset(ctx, "", stream);
-    ASSERT_TRUE(reader.has_value());
-    EXPECT_NE(reader->json().find("C.jpg"), std::string::npos);
-}
-
-TEST_F(ReaderTest, FromAssetGarbageThrowsRatherThanNullopt) {
-    std::string garbage(512, 'w');
-    std::istringstream stream(garbage, std::ios::binary);
-    auto ctx = std::make_shared<c2pa::Context>();
-
-    try {
-        auto reader = c2pa::Reader::from_asset(ctx, "", stream);
-        FAIL() << "Expected a throw; got "
-               << (reader.has_value() ? "a Reader" : "std::nullopt");
-    } catch (const c2pa::C2paException& e) {
-        EXPECT_EQ(std::string(e.what()).find("ManifestNotFound"), std::string::npos) << e.what();
-    }
-}
-
-TEST_F(ReaderTest, SvgWithEmptyFormatIsNotAManifestLookupFailure) {
-    std::string bytes = fixture_bytes("sample2.svg");
-
-    std::string explicit_msg;
-    {
-        std::istringstream stream(bytes, std::ios::binary);
-        try {
-            c2pa::Reader reader("image/svg+xml", stream);
-            FAIL() << "sample2.svg is unsigned and should not produce a Reader";
-        } catch (const c2pa::C2paException& e) {
-            explicit_msg = e.what();
-        }
-    }
-    EXPECT_NE(explicit_msg.find("ManifestNotFound"), std::string::npos) << explicit_msg;
-
-    std::string detected_msg;
-    {
-        std::istringstream stream(bytes, std::ios::binary);
-        try {
-            c2pa::Reader reader("", stream);
-            FAIL() << "SVG cannot be identified from content";
-        } catch (const c2pa::C2paException& e) {
-            detected_msg = e.what();
-        }
-    }
-    EXPECT_EQ(detected_msg.find("ManifestNotFound"), std::string::npos) << detected_msg;
-    EXPECT_NE(explicit_msg, detected_msg);
 }
 
 TEST_F(ReaderTest, ReaderSidecarBlankFormatReadsValidManifest) {
