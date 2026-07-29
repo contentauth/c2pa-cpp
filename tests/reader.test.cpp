@@ -1312,6 +1312,37 @@ TEST_F(ReaderTest, ReaderSidecarBlankFormatReadsValidManifest) {
               json::parse(blank_json)["active_manifest"]);
 }
 
+TEST_F(ReaderTest, ReaderBmffSidecarBlankFormatMatchesNamed) {
+    // BMFF hash verification is self-describing.
+    auto signer = c2pa_test::create_test_signer();
+    auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+    auto ctx = std::make_shared<c2pa::Context>();
+
+    c2pa::Builder builder(manifest);
+    builder.set_no_embed();
+    std::ifstream src(c2pa_test::get_fixture_path("video1.mp4"), std::ios::binary);
+    ASSERT_TRUE(src.is_open());
+    std::stringstream signed_dest(std::ios::in | std::ios::out | std::ios::binary);
+    std::vector<unsigned char> manifest_bytes = builder.sign("video/mp4", src, signed_dest, signer);
+    ASSERT_FALSE(manifest_bytes.empty());
+    std::vector<uint8_t> jumbf(manifest_bytes.begin(), manifest_bytes.end());
+
+    const std::string asset = fixture_bytes("video1.mp4");
+
+    auto read_state = [&](const std::string& fmt) {
+        std::istringstream stream(asset, std::ios::binary);
+        c2pa::Reader reader(ctx, fmt, stream, jumbf);
+        auto j = json::parse(reader.json());
+        return std::make_pair(j.value("validation_state", std::string("<none>")),
+                              j.value("active_manifest", std::string("<none>")));
+    };
+
+    std::pair<std::string, std::string> blank;
+    // Verify we can read both, with and without format
+    EXPECT_NO_THROW({ blank = read_state(""); });
+    EXPECT_EQ(blank, read_state("video/mp4"));
+}
+
 TEST_F(ReaderTest, WithFragmentEmptyFormatThrows) {
     // with_fragment rejects a blank format. The core would reject it too, but only
     // after c2pa_reader_with_fragment() has consumed (freed) the reader handle, which
