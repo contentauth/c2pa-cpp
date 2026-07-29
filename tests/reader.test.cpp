@@ -1271,20 +1271,53 @@ TEST_F(ReaderTest, SvgWithEmptyFormatIsNotAManifestLookupFailure) {
     EXPECT_NE(explicit_msg, detected_msg);
 }
 
-TEST_F(ReaderTest, ReaderSidecarEmptyFormatThrows) {
-    // External manifest data is always matched against the named format.
-    std::string bytes = fixture_bytes("C.jpg");
-    std::vector<uint8_t> manifest{0x01, 0x02, 0x03};
+TEST_F(ReaderTest, ReaderSidecarBlankFormatReadsValidManifest) {
+    // A sidecar (external) manifest is parsed from the supplied bytes, not from the
+    // container, so the format is only a verification hint. The core accepts a blank
+    // format here, yielding the same result as naming it, so the binding does not
+    // reject one.
+    auto signer = c2pa_test::create_test_signer();
+    auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
     auto ctx = std::make_shared<c2pa::Context>();
 
-    for (const std::string& blank : {std::string(""), std::string("   ")}) {
-        std::istringstream stream(bytes, std::ios::binary);
-        EXPECT_THROW({ c2pa::Reader reader(ctx, blank, stream, manifest); },
-                     c2pa::C2paException);
+    // Produce a valid sidecar manifest over A.jpg (no_embed returns the JUMBF bytes).
+    c2pa::Builder builder(manifest);
+    builder.set_no_embed();
+    std::ifstream src(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+    ASSERT_TRUE(src.is_open());
+    std::stringstream signed_dest(std::ios::in | std::ios::out | std::ios::binary);
+    std::vector<unsigned char> manifest_bytes = builder.sign("image/jpeg", src, signed_dest, signer);
+    ASSERT_FALSE(manifest_bytes.empty());
+    std::vector<uint8_t> jumbf(manifest_bytes.begin(), manifest_bytes.end());
+
+    const std::string asset = fixture_bytes("A.jpg");
+
+    std::string named_json;
+    {
+        std::istringstream stream(asset, std::ios::binary);
+        c2pa::Reader reader(ctx, "image/jpeg", stream, jumbf);
+        named_json = reader.json();
+        EXPECT_FALSE(named_json.empty());
     }
+
+    std::string blank_json;
+    {
+        std::istringstream stream(asset, std::ios::binary);
+        c2pa::Reader reader(ctx, "", stream, jumbf);  // blank format accepted
+        blank_json = reader.json();
+        EXPECT_FALSE(blank_json.empty());
+    }
+
+    // Same manifest and asset: naming the format or not is indistinguishable.
+    EXPECT_EQ(json::parse(named_json)["active_manifest"],
+              json::parse(blank_json)["active_manifest"]);
 }
 
 TEST_F(ReaderTest, WithFragmentEmptyFormatThrows) {
+    // with_fragment rejects a blank format. The core would reject it too, but only
+    // after c2pa_reader_with_fragment() has consumed (freed) the reader handle, which
+    // would leave this Reader unusable. The binding validates the format first, so a
+    // rejected append leaves the reader intact for later calls (asserted below).
     auto ctx = std::make_shared<c2pa::Context>();
     std::ifstream init(c2pa_test::get_fixture_path("dashinit.mp4"), std::ios::binary);
     ASSERT_TRUE(init.is_open());

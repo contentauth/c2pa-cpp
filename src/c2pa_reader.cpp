@@ -113,9 +113,8 @@ namespace c2pa
             throw C2paException("manifest_jumbf must not be empty");
         }
 
-        // The container type decides how the asset is hashed,
-        // format required here (can't be guessed).
-        const std::string resolved_format = detail::resolve_format(format);
+        // The format is a hint for hash verification against the supplied manifest.
+        const std::string normalized_format = detail::normalize_format(format);
 
         cpp_stream = std::make_unique<CppIStream>(image_stream);
 
@@ -127,7 +126,7 @@ namespace c2pa
         // c2pa_reader_with_manifest_data_and_stream always consumes c2pa_reader.
         C2paReader* updated = c2pa_reader_with_manifest_data_and_stream(
             c2pa_reader,
-            resolved_format.c_str(),
+            normalized_format.c_str(),
             cpp_stream->c_stream,
             manifest_jumbf.data(),
             manifest_jumbf.size());
@@ -195,8 +194,10 @@ namespace c2pa
     {
         ensure_initialized();
 
-        // The container type decides how the asset is hashed,
-        // format required here (can't be guessed).
+        // Validate the format before the FFI call below,
+        // which consumes (frees) the current reader handle.
+        // The core rejects a blank format, but only after taking ownership of the reader,
+        // leaving the Reader in an unusable state.
         const std::string resolved_format = detail::resolve_format(format);
 
         CppIStream main_wrapper(stream);

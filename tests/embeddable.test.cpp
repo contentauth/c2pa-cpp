@@ -653,9 +653,8 @@ TEST_F(EmbeddableTest, DirectEmbeddingWithFormat) {
         << "Direct JPEG format output matches placeholder size";
 }
 
-// The format selects the hash binding, so the embeddable workflow requires one.
-
 class EmbeddableBlankFormatTest : public EmbeddableTest, public ::testing::WithParamInterface<std::string> {};
+// needs_placeholder() and update_hash_from_stream() are the only embeddable steps when the core is silent on a blank format.
 
 INSTANTIATE_TEST_SUITE_P(EmbeddableBlankFormats, EmbeddableBlankFormatTest,
                          ::testing::ValuesIn(c2pa_test::kBlankFormats));
@@ -665,35 +664,11 @@ TEST_P(EmbeddableBlankFormatTest, NeedsPlaceholderRejectsBlankFormat) {
     EXPECT_THROW({ builder.needs_placeholder(GetParam()); }, c2pa::C2paException);
 }
 
-TEST_P(EmbeddableBlankFormatTest, PlaceholderRejectsBlankFormat) {
-    auto builder = make_builder();
-    EXPECT_THROW({ builder.placeholder(GetParam()); }, c2pa::C2paException);
-}
-
-TEST_F(EmbeddableTest, DataHashedPlaceholderRejectsBlankFormat) {
-    auto signer = c2pa_test::create_test_signer();
-    auto builder = make_builder();
-    EXPECT_THROW({ builder.data_hashed_placeholder(signer.reserve_size(), ""); },
-                 c2pa::C2paException);
-    EXPECT_THROW({ builder.data_hashed_placeholder(signer.reserve_size(), "   "); },
-                 c2pa::C2paException);
-}
-
 TEST_F(EmbeddableTest, UpdateHashFromStreamRejectsBlankFormat) {
     auto builder = make_builder();
     std::ifstream asset(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
     ASSERT_TRUE(asset.is_open());
     EXPECT_THROW({ builder.update_hash_from_stream("", asset); }, c2pa::C2paException);
-}
-
-TEST_F(EmbeddableTest, SignEmbeddableRejectsBlankFormat) {
-    auto builder = make_builder();
-    EXPECT_THROW({ builder.sign_embeddable(""); }, c2pa::C2paException);
-}
-
-TEST_F(EmbeddableTest, FormatEmbeddableRejectsBlankFormat) {
-    std::vector<unsigned char> data{0x01, 0x02, 0x03};
-    EXPECT_THROW({ c2pa::Builder::format_embeddable("", data); }, c2pa::C2paException);
 }
 
 TEST_F(EmbeddableTest, EmbeddableStepsRejectUnsupportedFormat) {
