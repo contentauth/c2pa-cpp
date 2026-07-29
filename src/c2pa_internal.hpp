@@ -266,11 +266,6 @@ inline constexpr const char *kFormatWhitespace = " \t\n\r\f\v";
     return std::string_view(format).substr(first, last - first + 1);
 }
 
-/// @brief True when a format is absent, i.e. empty or only ASCII whitespace.
-inline bool is_blank_format(const std::string &format) noexcept {
-    return trim_format(format).empty();
-}
-
 /// @brief Normalize a caller-supplied format for the C FFI.
 /// @param format The format supplied by, or derived for, the caller.
 /// @param allow_detection Whether a blank format may request content detection.
