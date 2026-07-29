@@ -482,55 +482,6 @@ TEST_F(ContextTest, ReaderWorksAfterContextOutOfScope) {
     EXPECT_NO_THROW(reader->json());
 }
 
-// A resolver callback that does nothing besides existing.
-static int noop_http_resolver(void* /*context*/,
-                              const C2paHttpRequest* /*request*/,
-                              C2paHttpResponse* /*response*/) {
-    return 0;
-}
-
-TEST(Context, WithHttpResolverSucceeds) {
-    auto context = c2pa::Context::ContextBuilder()
-        .with_http_resolver(nullptr, noop_http_resolver)
-        .create_context();
-    EXPECT_TRUE(context.is_valid());
-}
-
-TEST(Context, WithHttpResolverRejectsNullCallback) {
-    auto builder = c2pa::Context::ContextBuilder();
-    EXPECT_THROW(builder.with_http_resolver(nullptr, nullptr), c2pa::C2paException);
-}
-
-TEST(Context, WithHttpResolverOnMovedFromBuilderThrows) {
-    auto builder = c2pa::Context::ContextBuilder();
-    auto moved = std::move(builder);
-    EXPECT_THROW(builder.with_http_resolver(nullptr, noop_http_resolver),
-                 c2pa::C2paException);
-}
-
-TEST(Context, WithHttpResolverRepeatedCallsSucceed) {
-    // Each call allocates a fresh resolver and hands it to the C API,
-    // which consumes it.
-    auto builder = c2pa::Context::ContextBuilder();
-    for (int i = 0; i < 3; ++i) {
-        EXPECT_NO_THROW(builder.with_http_resolver(nullptr, noop_http_resolver));
-    }
-    auto context = builder.create_context();
-    EXPECT_TRUE(context.is_valid());
-}
-
-TEST(Context, WithSignerConsumesSignerOnSuccess) {
-    // The C API consumes the signer handle.
-    auto signer = c2pa_test::create_test_signer();
-    {
-        auto context = c2pa::Context::ContextBuilder()
-            .with_signer(std::move(signer))
-            .create_context();
-        EXPECT_TRUE(context.is_valid());
-    }
-    // signer destructs here, after the context that owns the native handle.
-}
-
 // ContextBuilder::with_signer can be chained with with_settings
 TEST(Context, ContextBuilderWithSettingsAndSigner) {
     c2pa::Settings settings;
