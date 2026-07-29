@@ -20,12 +20,17 @@
 #include <fstream>
 #include <string>
 #include <stdexcept>
+#include <vector>
 
 #include "c2pa.hpp"
 
 namespace c2pa_test {
 
 namespace fs = std::filesystem;
+
+/// Formats that count as absent: empty, or only ASCII whitespace.
+inline const std::vector<std::string> kBlankFormats = {
+    "", " ", "   ", "\t", "\n", "\t\n ", "\r\n", "\v\f"};
 
 /// @brief Read a text file into a string
 /// @param path Path to the file to read

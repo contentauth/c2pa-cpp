@@ -50,6 +50,12 @@ protected:
         }
         temp_files.clear();
     }
+
+    // Helper: Creates a Builder with a test manifest.
+    c2pa::Builder make_builder() {
+        auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+        return c2pa::Builder(manifest);
+    }
 };
 
 // e2e workflow with A.jpg (has no existing C2PA)
@@ -645,4 +651,22 @@ TEST_F(EmbeddableTest, DirectEmbeddingWithFormat) {
     EXPECT_GT(jpeg_manifest.size(), 0);
     EXPECT_EQ(jpeg_manifest.size(), placeholder.size())
         << "Direct JPEG format output matches placeholder size";
+}
+
+class EmbeddableBlankFormatTest : public EmbeddableTest, public ::testing::WithParamInterface<std::string> {};
+// needs_placeholder() and update_hash_from_stream() are the only embeddable steps when the core is silent on a blank format.
+
+INSTANTIATE_TEST_SUITE_P(EmbeddableBlankFormats, EmbeddableBlankFormatTest,
+                         ::testing::ValuesIn(c2pa_test::kBlankFormats));
+
+TEST_P(EmbeddableBlankFormatTest, NeedsPlaceholderRejectsBlankFormat) {
+    auto builder = make_builder();
+    EXPECT_THROW({ builder.needs_placeholder(GetParam()); }, c2pa::C2paException);
+}
+
+TEST_F(EmbeddableTest, UpdateHashFromStreamRejectsBlankFormat) {
+    auto builder = make_builder();
+    std::ifstream asset(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+    ASSERT_TRUE(asset.is_open());
+    EXPECT_THROW({ builder.update_hash_from_stream("", asset); }, c2pa::C2paException);
 }

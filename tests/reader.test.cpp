@@ -40,6 +40,27 @@ protected:
         return temp_path;
     }
 
+    // Copy a fixture to a temp path with any (or no) extension.
+    fs::path copy_fixture_to(const std::string& fixture, const std::string& temp_name) {
+        fs::path dest = get_temp_path(temp_name);
+        std::ifstream src(c2pa_test::get_fixture_path(fixture), std::ios::binary);
+        EXPECT_TRUE(src.is_open()) << "Failed to open fixture: " << fixture;
+        std::ofstream out(dest, std::ios::binary | std::ios::trunc);
+        EXPECT_TRUE(out.is_open()) << "Failed to create temp file: " << dest;
+        out << src.rdbuf();
+        out.close();
+        return dest;
+    }
+
+    // Read a whole fixture into a string, for use with std::istringstream.
+    static std::string fixture_bytes(const std::string& fixture) {
+        std::ifstream f(c2pa_test::get_fixture_path(fixture), std::ios::binary);
+        EXPECT_TRUE(f.is_open()) << "Failed to open fixture: " << fixture;
+        std::ostringstream ss;
+        ss << f.rdbuf();
+        return ss.str();
+    }
+
     void TearDown() override {
         if (cleanup_temp_files) {
             for (const auto& path : temp_files) {
@@ -81,7 +102,16 @@ INSTANTIATE_TEST_SUITE_P(ReaderStreamWithManifestTests, StreamWithManifestTests,
                              // (filename, type or mimetype, expected_content = Title from the manifest)
                              std::make_tuple("video1.mp4", "video/mp4", "My Title"),
                              std::make_tuple("sample1_signed.wav", "wav", "sample1_signed.wav"),
-                             std::make_tuple("C.dng", "DNG", "C.jpg")));
+                             std::make_tuple("C.dng", "DNG", "C.jpg"),
+                             // The supported list holds extensions as well as
+                             // MIME types, and matching ignores case.
+                             std::make_tuple("C.jpg", "jpg", "C.jpg"),
+                             std::make_tuple("C.jpg", "JPG", "C.jpg"),
+                             std::make_tuple("C.jpg", "image/jpeg", "C.jpg"),
+                             std::make_tuple("C.jpg", "Image/JPEG", "C.jpg"),
+                             std::make_tuple("C2.DNG", "dng", "C.jpg"),
+                             std::make_tuple("C2.DNG", "image/dng", "C.jpg"),
+                             std::make_tuple("C2.DNG", "image/x-adobe-dng", "C.jpg")));
 
 TEST_P(StreamWithManifestTests, StreamWithManifest) {
     auto filename = std::get<0>(GetParam());
@@ -845,4 +875,309 @@ TEST_F(ReaderSidecarTest, SidecarReaderResetsStreamPosition) {
     // Reader can read even if stream img is at another pos than 0
     c2pa::Reader r(ctx, "image/jpeg", *img, sc.manifest);
     EXPECT_FALSE(r.json().empty());
+}
+
+// A blank format should trigger content guessing from the core lib.
+class BlankFormatDetectionTest
+    : public ReaderTest,
+      public ::testing::WithParamInterface<std::tuple<std::string, std::string, std::string>> {};
+
+INSTANTIATE_TEST_SUITE_P(
+    ReaderBlankFormatDetectionTest, BlankFormatDetectionTest,
+    ::testing::Values(
+        // (format, fixture, expected content in the manifest store JSON)
+        std::make_tuple("", "C.jpg", "C.jpg"),
+        std::make_tuple("", "video1.mp4", "My Title"),
+        std::make_tuple("", "sample1_signed.wav", "sample1_signed.wav"),
+        std::make_tuple("", "C.dng", "C.jpg"),
+        std::make_tuple(" ", "C.jpg", "C.jpg"),
+        std::make_tuple("   ", "C.jpg", "C.jpg"),
+        std::make_tuple("\t", "C.jpg", "C.jpg"),
+        std::make_tuple("\n", "C.jpg", "C.jpg"),
+        std::make_tuple("\t\n ", "C.jpg", "C.jpg"),
+        std::make_tuple("\r\n", "C.jpg", "C.jpg"),
+        std::make_tuple("\v\f", "C.jpg", "C.jpg")));
+
+TEST_P(BlankFormatDetectionTest, ResolvesFormatOnSharedContext) {
+    const auto& [format, filename, expected_content] = GetParam();
+    std::string bytes = fixture_bytes(filename);
+    std::istringstream stream(bytes, std::ios::binary);
+    auto ctx = std::make_shared<c2pa::Context>();
+
+    c2pa::Reader reader(ctx, format, stream);
+    EXPECT_NE(reader.json().find(expected_content), std::string::npos);
+}
+
+TEST_F(ReaderTest, ExtensionlessFilePathReadsManifest) {
+    fs::path noext = copy_fixture_to("C.jpg", "detect-noext");
+    ASSERT_TRUE(fs::exists(noext));
+    ASSERT_TRUE(noext.extension().empty()) << "temp path must have no extension";
+
+    c2pa::Reader reader(noext);
+    EXPECT_NE(reader.json().find("C.jpg"), std::string::npos);
+}
+
+TEST_F(ReaderTest, UnlistedExtensionDefersToContent) {
+    // The extension describes the filename; the bytes decide the format.
+    fs::path odd = copy_fixture_to("C.jpg", "detect-unlisted-ext.zzz");
+    c2pa::Reader reader(odd);
+    EXPECT_NE(reader.json().find("C.jpg"), std::string::npos);
+}
+
+TEST_F(ReaderTest, WrongButSupportedExtensionDefersToContent) {
+    fs::path mislabeled = copy_fixture_to("C.jpg", "detect-mislabeled.png");
+    c2pa::Reader reader(mislabeled);
+    EXPECT_NE(reader.json().find("C.jpg"), std::string::npos);
+}
+
+TEST_F(ReaderTest, EmptyFormatMatchesExplicitFormatJson) {
+    std::string bytes = fixture_bytes("C.jpg");
+
+    std::istringstream detected_stream(bytes, std::ios::binary);
+    c2pa::Reader detected("", detected_stream);
+
+    std::istringstream explicit_stream(bytes, std::ios::binary);
+    c2pa::Reader explicitly("image/jpeg", explicit_stream);
+
+    auto a = json::parse(detected.json());
+    auto b = json::parse(explicitly.json());
+    EXPECT_EQ(a["active_manifest"], b["active_manifest"]);
+    EXPECT_EQ(a["manifests"].size(), b["manifests"].size());
+    EXPECT_EQ(detected.is_embedded(), explicitly.is_embedded());
+}
+
+TEST_F(ReaderTest, DngExtensionWithJpegContentIsCorrected) {
+    fs::path mislabeled = copy_fixture_to("C.jpg", "detect-mislabeled.dng");
+    c2pa::Reader reader(mislabeled);
+    EXPECT_NE(reader.json().find("C.jpg"), std::string::npos);
+}
+
+TEST_F(ReaderTest, WhitespaceFormatFromAssetReturnsReader) {
+    std::string bytes = fixture_bytes("C.jpg");
+    std::istringstream stream(bytes, std::ios::binary);
+    auto ctx = std::make_shared<c2pa::Context>();
+
+    auto reader = c2pa::Reader::from_asset(ctx, "  ", stream);
+    ASSERT_TRUE(reader.has_value());
+    EXPECT_NE(reader->json().find("C.jpg"), std::string::npos);
+}
+
+TEST_F(ReaderTest, PaddedFormatIsTrimmed) {
+    // Padding is never meaningful in a format, so it is trimmed before the
+    // format reaches the library, which does no trimming of its own.
+    std::string bytes = fixture_bytes("C.jpg");
+    std::istringstream stream(bytes, std::ios::binary);
+    std::istringstream clean(bytes, std::ios::binary);
+
+    c2pa::Reader padded(std::make_shared<c2pa::Context>(), " \t image/jpeg \n ", stream);
+    c2pa::Reader exact(std::make_shared<c2pa::Context>(), "image/jpeg", clean);
+    EXPECT_EQ(padded.json(), exact.json());
+}
+
+TEST_F(ReaderTest, PaddedUnknownFormatStillDefersToContent) {
+    // Trimming does not make an unknown format known; content detection is
+    // still what resolves the container.
+    std::string bytes = fixture_bytes("C.jpg");
+    std::istringstream stream(bytes, std::ios::binary);
+    std::istringstream clean(bytes, std::ios::binary);
+
+    c2pa::Reader padded(std::make_shared<c2pa::Context>(), "  application/zip  ", stream);
+    c2pa::Reader exact(std::make_shared<c2pa::Context>(), "image/jpeg", clean);
+    EXPECT_EQ(padded.json(), exact.json());
+}
+
+TEST_F(ReaderTest, UnsupportedFormatOnStreamDefersToContent) {
+    // The library reconciles the hint against the container it detects.
+    std::string bytes = fixture_bytes("C.jpg");
+    std::istringstream stream(bytes, std::ios::binary);
+    std::istringstream clean(bytes, std::ios::binary);
+
+    c2pa::Reader mismatched(std::make_shared<c2pa::Context>(), "application/zip", stream);
+    c2pa::Reader exact(std::make_shared<c2pa::Context>(), "image/jpeg", clean);
+    EXPECT_EQ(mismatched.json(), exact.json());
+}
+
+TEST_F(ReaderTest, NoFormatOverloadDetectsFromContent) {
+    std::ifstream file(c2pa_test::get_fixture_path("C.jpg"), std::ios::binary);
+    ASSERT_TRUE(file.is_open());
+    auto ctx = std::make_shared<c2pa::Context>();
+
+    c2pa::Reader reader(ctx, file);
+    EXPECT_NE(reader.json().find("C.jpg"), std::string::npos);
+}
+
+TEST_F(ReaderTest, NoFormatOverloadMatchesEmptyFormat) {
+    std::string bytes = fixture_bytes("C.jpg");
+    auto ctx = std::make_shared<c2pa::Context>();
+
+    std::istringstream overload_stream(bytes, std::ios::binary);
+    c2pa::Reader from_overload(ctx, overload_stream);
+
+    std::istringstream empty_stream(bytes, std::ios::binary);
+    c2pa::Reader from_empty(ctx, "", empty_stream);
+
+    auto a = json::parse(from_overload.json());
+    auto b = json::parse(from_empty.json());
+    EXPECT_EQ(a["active_manifest"], b["active_manifest"]);
+    EXPECT_EQ(a["manifests"].size(), b["manifests"].size());
+}
+
+TEST_F(ReaderTest, NoFormatOverloadResolvesUnambiguously) {
+    // Compile-level guard that each call selects exactly one overload.
+    auto ctx = std::make_shared<c2pa::Context>();
+    fs::path asset = c2pa_test::get_fixture_path("C.jpg");
+
+    std::ifstream ifs(asset, std::ios::binary);
+    ASSERT_TRUE(ifs.is_open());
+    EXPECT_NO_THROW({ c2pa::Reader reader(ctx, ifs); });
+
+    std::string bytes = fixture_bytes("C.jpg");
+    std::istringstream iss(bytes, std::ios::binary);
+    EXPECT_NO_THROW({ c2pa::Reader reader(ctx, iss); });
+
+    std::istringstream base_source(bytes, std::ios::binary);
+    std::istream& base_ref = base_source;
+    EXPECT_NO_THROW({ c2pa::Reader reader(ctx, base_ref); });
+
+    EXPECT_NO_THROW({ c2pa::Reader reader(ctx, asset); });
+}
+
+TEST_F(ReaderTest, FromAssetNoFormatOverloadReturnsNullopt) {
+    std::string bytes = fixture_bytes("A.jpg");
+    std::istringstream stream(bytes, std::ios::binary);
+    auto ctx = std::make_shared<c2pa::Context>();
+
+    auto reader = c2pa::Reader::from_asset(ctx, stream);
+    EXPECT_FALSE(reader.has_value());
+}
+
+TEST_F(ReaderTest, SubMagicLengthStreamWithEmptyFormatThrows) {
+    // Detection needs two bytes, so one leaves nothing to identify.
+    std::string tiny("\xff", 1);
+    std::istringstream stream(tiny, std::ios::binary);
+    EXPECT_THROW({ c2pa::Reader reader("", stream); }, c2pa::C2paException);
+}
+
+TEST_F(ReaderTest, EmptyStreamWithEmptyFormatThrows) {
+    std::istringstream stream(std::string{}, std::ios::binary);
+    EXPECT_THROW({ c2pa::Reader reader("", stream); }, c2pa::C2paException);
+}
+
+TEST_F(ReaderTest, CorruptedJpegBodyWithEmptyFormatThrows) {
+    // The JPEG signature survives, so detection succeeds and parsing fails after.
+    std::string bytes = fixture_bytes("C.jpg");
+    ASSERT_GT(bytes.size(), 64u);
+    for (size_t i = 16; i < bytes.size(); ++i) {
+        bytes[i] = static_cast<char>(bytes[i] ^ 0x5a);
+    }
+    std::istringstream stream(bytes, std::ios::binary);
+    EXPECT_THROW({ c2pa::Reader reader("", stream); }, c2pa::C2paException);
+}
+
+TEST_F(ReaderTest, ReaderSidecarBlankFormatReadsValidManifest) {
+    // A sidecar (external) manifest is parsed from the supplied bytes, not from the container.
+    // The core accepts a blank format here too.
+    auto signer = c2pa_test::create_test_signer();
+    auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+    auto ctx = std::make_shared<c2pa::Context>();
+
+    // Produce a valid sidecar manifest over A.jpg (no_embed returns the JUMBF bytes).
+    c2pa::Builder builder(manifest);
+    builder.set_no_embed();
+    std::ifstream src(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+    ASSERT_TRUE(src.is_open());
+    std::stringstream signed_dest(std::ios::in | std::ios::out | std::ios::binary);
+    std::vector<unsigned char> manifest_bytes = builder.sign("image/jpeg", src, signed_dest, signer);
+    ASSERT_FALSE(manifest_bytes.empty());
+    // Use those re-read bytes directly
+    std::vector<uint8_t> jumbf(manifest_bytes.begin(), manifest_bytes.end());
+
+    const std::string asset = fixture_bytes("A.jpg");
+
+    std::string named_json;
+    {
+        std::istringstream stream(asset, std::ios::binary);
+        c2pa::Reader reader(ctx, "image/jpeg", stream, jumbf);
+        named_json = reader.json();
+        EXPECT_FALSE(named_json.empty());
+    }
+
+    std::string blank_json;
+    {
+        std::istringstream stream(asset, std::ios::binary);
+        c2pa::Reader reader(ctx, "", stream, jumbf);  // blank format accepted
+        blank_json = reader.json();
+        EXPECT_FALSE(blank_json.empty());
+    }
+
+    // Same manifest and asset: naming the format or not is indistinguishable.
+    EXPECT_EQ(json::parse(named_json)["active_manifest"],
+              json::parse(blank_json)["active_manifest"]);
+}
+
+TEST_F(ReaderTest, ReaderBmffSidecarBlankFormatMatchesNamed) {
+    // BMFF hash verification is self-describing.
+    auto signer = c2pa_test::create_test_signer();
+    auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+    auto ctx = std::make_shared<c2pa::Context>();
+
+    c2pa::Builder builder(manifest);
+    builder.set_no_embed();
+    std::ifstream src(c2pa_test::get_fixture_path("video1.mp4"), std::ios::binary);
+    ASSERT_TRUE(src.is_open());
+    std::stringstream signed_dest(std::ios::in | std::ios::out | std::ios::binary);
+    std::vector<unsigned char> manifest_bytes = builder.sign("video/mp4", src, signed_dest, signer);
+    ASSERT_FALSE(manifest_bytes.empty());
+    std::vector<uint8_t> jumbf(manifest_bytes.begin(), manifest_bytes.end());
+
+    const std::string asset = fixture_bytes("video1.mp4");
+
+    auto read_state = [&](const std::string& fmt) {
+        std::istringstream stream(asset, std::ios::binary);
+        c2pa::Reader reader(ctx, fmt, stream, jumbf);
+        auto j = json::parse(reader.json());
+        return std::make_pair(j.value("validation_state", std::string("<none>")),
+                              j.value("active_manifest", std::string("<none>")));
+    };
+
+    std::pair<std::string, std::string> blank;
+    // Verify we can read both, with and without format
+    EXPECT_NO_THROW({ blank = read_state(""); });
+    EXPECT_EQ(blank, read_state("video/mp4"));
+}
+
+TEST_F(ReaderTest, WithFragmentEmptyFormatThrows) {
+    // with_fragment rejects a blank format. The core would reject it too, but only
+    // after c2pa_reader_with_fragment() has consumed (freed) the reader handle, which
+    // would leave this Reader unusable. The binding validates the format first, so a
+    // rejected append leaves the reader intact for later calls (asserted below).
+    auto ctx = std::make_shared<c2pa::Context>();
+    std::ifstream init(c2pa_test::get_fixture_path("dashinit.mp4"), std::ios::binary);
+    ASSERT_TRUE(init.is_open());
+    c2pa::Reader reader(ctx, "video/mp4", init);
+
+    for (const std::string& blank : {std::string(""), std::string("  ")}) {
+        std::ifstream main_seg(c2pa_test::get_fixture_path("dashinit.mp4"), std::ios::binary);
+        std::ifstream fragment(c2pa_test::get_fixture_path("dash1.m4s"), std::ios::binary);
+        ASSERT_TRUE(main_seg.is_open());
+        ASSERT_TRUE(fragment.is_open());
+        EXPECT_THROW({ reader.with_fragment(blank, main_seg, fragment); },
+                     c2pa::C2paException);
+    }
+
+    // The reader handle is untouched by the rejected calls.
+    EXPECT_FALSE(reader.json().empty());
+}
+
+TEST_F(ReaderTest, DngReadsWithExplicitAndDetectedFormat) {
+    auto by_path = c2pa::Reader(c2pa_test::get_fixture_path("C2.DNG"));
+
+    std::string bytes = fixture_bytes("C2.DNG");
+    std::istringstream stream(bytes, std::ios::binary);
+    auto detected = c2pa::Reader("", stream);
+
+    auto a = json::parse(by_path.json());
+    auto b = json::parse(detected.json());
+    EXPECT_EQ(a["active_manifest"], b["active_manifest"]);
+    EXPECT_EQ(a["manifests"].size(), b["manifests"].size());
 }

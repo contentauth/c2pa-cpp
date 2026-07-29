@@ -18,10 +18,13 @@
 #ifndef C2PA_INTERNAL_HPP
 #define C2PA_INTERNAL_HPP
 
+#include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <fstream>
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <memory>
 
@@ -240,6 +243,43 @@ inline std::unique_ptr<StreamType> open_file_binary(const std::filesystem::path 
 inline std::string extract_file_extension(const std::filesystem::path &path) noexcept {
     auto ext = path.extension().string();
     return ext.empty() ? "" : ext.substr(1);
+}
+
+/// @brief Format asking the library to determine the container type from content.
+/// @details The C API rejects a null format, so absent must be spelled empty.
+inline constexpr const char *kDetectFormatFromContent = "";
+
+/// @brief ASCII whitespace ignored around a format.
+/// @details Formats are MIME types or extensions, so non-ASCII spaces are
+///          deliberately excluded.
+inline constexpr const char *kFormatWhitespace = " \t\n\r\f\v";
+
+/// @brief Trim and lowercase a caller-supplied format; empty when @p format is blank.
+/// @details Empty means detection from content, so this alone is enough wherever
+///          a blank format is allowed to request that.
+[[nodiscard]] inline std::string normalize_format(const std::string &format) {
+    const auto first = format.find_first_not_of(kFormatWhitespace);
+    if (first == std::string::npos) {
+        return {};  // Empty or all whitespace.
+    }
+    const auto last = format.find_last_not_of(kFormatWhitespace);
+    std::string normalized(std::string_view(format).substr(first, last - first + 1));
+    std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return normalized;
+}
+
+/// @brief Resolve a format that must be stated explicitly.
+///        These paths never infer the container type from content,
+///        so a blank format is rejected.
+/// @return @p format trimmed and lowercased.
+/// @throws C2paException if @p format is blank.
+[[nodiscard]] inline std::string resolve_format(const std::string &format) {
+    std::string normalized = normalize_format(format);
+    if (normalized.empty()) {
+        throw C2paException("An explicit format is required.");
+    }
+    return normalized;
 }
 
 /// @brief Convert C string result to C++ string with cleanup

@@ -18,8 +18,28 @@ Use the `Reader` constructor to read C2PA data from a stream. This constructor e
 The parameters are:
 
 - `context` - A `Context` (or any `IContextProvider`) that configures SDK behavior. See [Configuring the SDK with Context and Settings](context-settings.md).
-- `<FORMAT>` - A MIME string format for the stream; must be one of the [supported file formats](supported-formats.md).
+- `<FORMAT>` - A MIME type or file extension for the stream, for example `image/jpeg` or `jpg`; see the [supported file formats](https://github.com/contentauth/c2pa-rs/blob/main/docs/supported-formats.md). Pass an empty string to take the format from the stream's leading bytes instead.
 - `<STREAM>` - An open readable iostream.
+
+Passing an empty string (or use a format-less overload of a `Reader`) asks the native core library to guess the format (the read will still fail if the format can't be guessed or is unsupported):
+
+```cpp
+c2pa::Context context;
+std::ifstream ifs("asset.bin", std::ios::binary);
+auto reader = c2pa::Reader(std::make_shared<c2pa::Context>(), ifs);
+```
+
+The used stream must support seeking, since it is rewound after inspection. A file path with no extension is read the same way.
+
+Prefer passing the format when you know it. When you do pass one, it is reconciled against the container detected in the leading bytes:
+
+- Both identify the same container: your format is used, keeping the more specific spelling (`dng` stays `dng` rather than widening to `image/tiff`).
+- They identify different containers: the detected container wins.
+- Detection finds no container: the format is used as given.
+
+If detection detects no container and no format was supplied, the read fails with an unsupported-type error. Note that the format is a hint, not a constraint: the library does not reject a format merely because it is absent from `Reader::supported_mime_types()`, and an unrecognized format on recognizable bytes still reads.
+
+`Builder` always requires an explicit format, because the container type decides how the asset is written and hashed. Signing with a blank format, or to a destination path with no extension, throws.
 
 For example:
 

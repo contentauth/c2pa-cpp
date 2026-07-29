@@ -82,6 +82,12 @@ protected:
         temp_dirs.clear();
     }
 
+    // Helper: Creates a Builder with a test manifest.
+    c2pa::Builder make_builder() {
+        auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+        return c2pa::Builder(manifest);
+    }
+
     // Helper: Creates an ingredient archive (.c2pa) from a single ingredient.
     void create_ingredient_archive(
         const fs::path& archive_path,
@@ -7505,4 +7511,137 @@ TEST_F(BuilderTest, ArchiveToFstreamBackedCppOStream) {
     dest.flush();
 
     EXPECT_GT(std::filesystem::file_size(archive_path), 0u);
+}
+
+// Signing always needs the container type, which decides how it hashes.
+class BuilderBlankFormatTest : public BuilderTest, public ::testing::WithParamInterface<std::string> {};
+
+INSTANTIATE_TEST_SUITE_P(BuilderBlankFormatSignTests, BuilderBlankFormatTest,
+                         ::testing::ValuesIn(c2pa_test::kBlankFormats));
+
+TEST_P(BuilderBlankFormatTest, SignRejectsBlankFormat) {
+    auto signer = c2pa_test::create_test_signer();
+    auto builder = make_builder();
+
+    std::ifstream source(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+    ASSERT_TRUE(source.is_open());
+    std::stringstream dest(std::ios::in | std::ios::out | std::ios::binary);
+
+    EXPECT_THROW({ builder.sign(GetParam(), source, dest, signer); }, c2pa::C2paException);
+}
+
+TEST_F(BuilderTest, SignDoesNotTruncateDestinationWhenFormatIsRejected) {
+    // The destination opens with trunc, so the format is checked before it.
+    auto signer = c2pa_test::create_test_signer();
+    auto builder = make_builder();
+
+    fs::path dest = get_temp_path("existing-destination-noext");
+    const std::string original = "existing contents that must survive";
+    {
+        std::ofstream f(dest, std::ios::binary | std::ios::trunc);
+        ASSERT_TRUE(f.is_open());
+        f << original;
+    }
+
+    EXPECT_THROW(
+        { builder.sign(c2pa_test::get_fixture_path("A.jpg"), dest, signer); },
+        c2pa::C2paException);
+
+    ASSERT_TRUE(fs::exists(dest));
+    std::ifstream check(dest, std::ios::binary);
+    std::stringstream after;
+    after << check.rdbuf();
+    EXPECT_EQ(after.str(), original);
+}
+
+TEST_F(BuilderTest, SignWithUnsupportedFormatThrows) {
+    auto signer = c2pa_test::create_test_signer();
+    auto builder = make_builder();
+
+    std::ifstream source(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+    ASSERT_TRUE(source.is_open());
+    std::stringstream dest(std::ios::in | std::ios::out | std::ios::binary);
+
+    EXPECT_THROW({ builder.sign("application/zip", source, dest, signer); },
+                 c2pa::C2paException);
+}
+
+TEST_F(BuilderTest, AddIngredientAcceptsUnknownFormat) {
+    auto builder = make_builder();
+    const std::string json = R"({"title": "A.jpg", "relationship": "componentOf"})";
+
+    for (const std::string& format : {std::string("application/zip"), std::string("zzz")}) {
+        std::ifstream src(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+        ASSERT_TRUE(src.is_open());
+        EXPECT_NO_THROW({ builder.add_ingredient(json, format, src); }) << "format: " << format;
+    }
+}
+
+TEST_F(BuilderTest, AddIngredientFromExtensionlessPath) {
+    auto builder = make_builder();
+    fs::path ingredient = get_temp_path("ingredient-noext");
+    {
+        std::ifstream src(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+        ASSERT_TRUE(src.is_open());
+        std::ofstream out(ingredient, std::ios::binary | std::ios::trunc);
+        ASSERT_TRUE(out.is_open());
+        out << src.rdbuf();
+    }
+
+    EXPECT_NO_THROW(
+        { builder.add_ingredient(R"({"title": "A.jpg", "relationship": "componentOf"})", ingredient); });
+}
+
+TEST_F(BuilderTest, SignProducesEquivalentManifestForEverySpelling) {
+    auto signer = c2pa_test::create_test_signer();
+
+    for (const char* format :
+         {"image/jpeg", "IMAGE/JPEG", "Image/Jpeg", "jpg", "JPG"}) {
+        auto builder = make_builder();
+
+        std::ifstream source(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+        ASSERT_TRUE(source.is_open());
+        std::stringstream dest(std::ios::in | std::ios::out | std::ios::binary);
+        ASSERT_NO_THROW({ builder.sign(format, source, dest, signer); }) << "format: " << format;
+
+        dest.seekg(0);
+        auto ctx = std::make_shared<c2pa::Context>();
+        c2pa::Reader reader(ctx, "image/jpeg", dest);
+
+        auto store = json::parse(reader.json());
+        const auto& active = store["manifests"][store["active_manifest"].get<std::string>()];
+        ASSERT_TRUE(active.contains("thumbnail"))
+            << "signing with " << format << " dropped the claim thumbnail";
+        EXPECT_EQ(active["thumbnail"]["format"], "image/jpeg");
+
+        // The reference must resolve to a real JPEG, not just be present.
+        std::stringstream thumbnail(std::ios::in | std::ios::out | std::ios::binary);
+        reader.get_resource(active["thumbnail"]["identifier"].get<std::string>(), thumbnail);
+        const std::string bytes = thumbnail.str();
+        EXPECT_GT(bytes.size(), 1000u)
+            << "signing with " << format << " produced an empty claim thumbnail";
+        ASSERT_GE(bytes.size(), 3u);
+        EXPECT_EQ(bytes.compare(0, 3, "\xff\xd8\xff"), 0)
+            << "signing with " << format << " produced a thumbnail that is not a JPEG";
+    }
+}
+
+TEST_F(BuilderTest, SidecarSignAcceptsUnknownFormat) {
+    // A sidecar manifest travels beside the asset, so the container never has
+    // to be parsed or rewritten and any format is signable.
+    auto signer = c2pa_test::create_test_signer();
+
+    for (const std::string& format : {std::string("application/zip"), std::string("zzz")}) {
+        auto builder = make_builder();
+        builder.set_no_embed();
+
+        std::ifstream source(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+        ASSERT_TRUE(source.is_open());
+        std::stringstream dest(std::ios::in | std::ios::out | std::ios::binary);
+
+        std::vector<unsigned char> manifest;
+        ASSERT_NO_THROW({ manifest = builder.sign(format, source, dest, signer); })
+            << "format: " << format;
+        EXPECT_FALSE(manifest.empty()) << "format: " << format;
+    }
 }
