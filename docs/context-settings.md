@@ -485,7 +485,7 @@ Settings JSON has this top-level structure:
 | [`core`](#core-settings) | Core SDK behavior and performance tuning |
 | [`verify`](#verify-settings) | Validation and verification behavior |
 | [`builder`](#builder-settings) | Manifest creation and embedding behavior |
-| [`signer`](#signer-configuration) | C2PA signer configuration |
+| [`signer`](#signer-settings) | C2PA signer configuration |
 | [`cawg_x509_signer`](#cawg-x509-signer-configuration) | CAWG identity assertion signer configuration |
 
 The `version` property must be `1`. All other properties are optional.
@@ -895,7 +895,6 @@ The SDK introduced Context-based APIs to replace constructors and functions that
 | `Builder(manifest_json)` | [`Builder(shared_ptr<IContextProvider>, manifest_json)`](#adding-a-context-parameter-to-reader-and-builder) |
 | `Reader(IContextProvider&, ...)` | [`Reader(shared_ptr<IContextProvider>, ...)`](#using-shared_ptr-instead-of-reference-for-reader-and-builder) |
 | `Builder(IContextProvider&, ...)` | [`Builder(shared_ptr<IContextProvider>, ...)`](#using-shared_ptr-instead-of-reference-for-reader-and-builder) |
-| `Builder::sign(..., ostream, ...)` | [`Builder::sign(..., iostream, ...)`](#using-iostream-instead-of-ostream-in-buildersign) |
 
 ### Replacing load_settings
 

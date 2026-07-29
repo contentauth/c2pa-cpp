@@ -120,7 +120,7 @@ Unlike `Builder::sign()` where a `Signer` is passed explicitly, the embeddable A
 > The embeddable APIs require the **signer to be attached to the Context** via `Context::ContextBuilder::with_signer()` or through a signer configuration in the JSON settings. Calling `placeholder()` or `sign_embeddable()` without a signer on the Context will throw a `C2paException`.
 
 There are two ways to attach a signer to the `Context`:
-- [Programmatically via ContextBuilder](#attaching-a-signer-programmatically-via-contextbuilder)
+- [Programmatically via ContextBuilder](#using-contextbuilder-to-attach-a-signer)
 - [Via JSON settings](#attaching-signer-via-json-settings)
 
 #### Using ContextBuilder to attach a signer

@@ -575,7 +575,7 @@ When linking multiple ingredient archives, write one archive per ingredient with
 > - Labels baked into the archive at archive-creation time do not carry through. The label must be re-asserted in the signing builder's `add_ingredient` JSON.
 > - Both rules apply whether the archive is added by file path or by stream.
 >
-> Attempting to link via `instance_id`, or relying on a baked-in label alone, produces a sign-time error: `Action ingredientId not found: <id>`. See [Troubleshooting linking errors](#troubleshooting-linking-errors).
+> Attempting to link via `instance_id`, or relying on a baked-in label alone, produces a sign-time error: `Action ingredientId not found: <id>`. 
 
 To link an ingredient archive to an action via `ingredientIds`, set a `label` on the JSON passed to `add_ingredient` on the signing builder, and use the same string in the action's `ingredientIds` array. Labels are build-time linking keys only. The SDK may reassign the actual label in the signed manifest during signing.
 
