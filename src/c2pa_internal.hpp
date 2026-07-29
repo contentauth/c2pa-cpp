@@ -275,8 +275,9 @@ inline constexpr const char *kFormatWhitespace = " \t\n\r\f\v";
     return normalized;
 }
 
-/// @brief Resolve a format that must be stated. These paths never infer the
-///        container type from content, so a blank format is rejected.
+/// @brief Resolve a format that must be stated explicitly.
+///        These paths never infer the container type from content,
+///        so a blank format is rejected.
 /// @return @p format trimmed and lowercased.
 /// @throws C2paException if @p format is blank.
 [[nodiscard]] inline std::string resolve_format(const std::string &format) {
@@ -285,13 +286,6 @@ inline constexpr const char *kFormatWhitespace = " \t\n\r\f\v";
         throw C2paException("An explicit format is required.");
     }
     return normalized;
-}
-
-/// @brief Normalize an extension derived from a filename (path).
-/// @details The extension describes the filename rather than the data.
-///          Content detection overrides a wrong one.
-[[nodiscard]] inline std::string normalize_derived_extension(const std::string &extension) {
-    return normalize_format(extension);
 }
 
 /// @brief Convert C string result to C++ string with cleanup

@@ -84,7 +84,7 @@ namespace c2pa
 
         // The extension describes the filename, so it is normalized and left unchecked.
         // Content type detection overrides it anyway if wrong.
-        std::string extension = detail::normalize_derived_extension(detail::extract_file_extension(source_path));
+        std::string extension = detail::normalize_format(detail::extract_file_extension(source_path));
 
         // CppIStream stores reference to owned_stream, which lives as long as Reader
         cpp_stream = std::make_unique<CppIStream>(*owned_stream);
@@ -239,7 +239,7 @@ namespace c2pa
             throw std::system_error(errno, std::system_category(), "Failed to open file: " + source_path.string());
         }
 
-        std::string extension = detail::normalize_derived_extension(detail::extract_file_extension(source_path));
+        std::string extension = detail::normalize_format(detail::extract_file_extension(source_path));
 
         // CppIStream stores reference to owned_stream, which lives as long as Reader
         cpp_stream = std::make_unique<CppIStream>(*owned_stream);
