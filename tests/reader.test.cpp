@@ -1272,10 +1272,8 @@ TEST_F(ReaderTest, SvgWithEmptyFormatIsNotAManifestLookupFailure) {
 }
 
 TEST_F(ReaderTest, ReaderSidecarBlankFormatReadsValidManifest) {
-    // A sidecar (external) manifest is parsed from the supplied bytes, not from the
-    // container, so the format is only a verification hint. The core accepts a blank
-    // format here, yielding the same result as naming it, so the binding does not
-    // reject one.
+    // A sidecar (external) manifest is parsed from the supplied bytes, not from the container.
+    // The core accepts a blank format here too.
     auto signer = c2pa_test::create_test_signer();
     auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
     auto ctx = std::make_shared<c2pa::Context>();
@@ -1288,6 +1286,7 @@ TEST_F(ReaderTest, ReaderSidecarBlankFormatReadsValidManifest) {
     std::stringstream signed_dest(std::ios::in | std::ios::out | std::ios::binary);
     std::vector<unsigned char> manifest_bytes = builder.sign("image/jpeg", src, signed_dest, signer);
     ASSERT_FALSE(manifest_bytes.empty());
+    // Use those re-read bytes directly
     std::vector<uint8_t> jumbf(manifest_bytes.begin(), manifest_bytes.end());
 
     const std::string asset = fixture_bytes("A.jpg");
