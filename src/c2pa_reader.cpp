@@ -47,7 +47,7 @@ namespace c2pa
         }
 
         // Validate before acquiring anything.
-        const std::string resolved = detail::resolve_reader_format(format);
+        const std::string resolved = detail::resolve_detectable_format(format);
 
         // Create the stream wrapper before the reader handle
         cpp_stream = std::make_unique<CppIStream>(stream);
@@ -117,7 +117,7 @@ namespace c2pa
         }
 
         // The container type decides how the asset is hashed, so it is required.
-        const std::string resolved = detail::require_explicit_format(format);
+        const std::string resolved = detail::resolve_format(format);
 
         cpp_stream = std::make_unique<CppIStream>(image_stream);
 
@@ -197,7 +197,8 @@ namespace c2pa
     {
         ensure_initialized();
 
-        const std::string resolved = detail::require_explicit_format(format);
+        // format can't be auto-detected here
+        const std::string resolved = detail::resolve_format(format);
 
         CppIStream main_wrapper(stream);
         CppIStream fragment_wrapper(fragment);
@@ -220,7 +221,7 @@ namespace c2pa
 
     Reader::Reader(const std::string &format, std::istream &stream)
     {
-        const std::string resolved = detail::resolve_reader_format(format);
+        const std::string resolved = detail::resolve_detectable_format(format);
 
         cpp_stream = std::make_unique<CppIStream>(stream);
         c2pa_reader = c2pa_reader_from_stream(resolved.c_str(), cpp_stream->c_stream);

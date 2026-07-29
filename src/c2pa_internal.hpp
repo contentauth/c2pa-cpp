@@ -289,13 +289,13 @@ inline constexpr const char *kFormatWhitespace = " \t\n\r\f\v";
 }
 
 /// @brief Resolve a format for reading, letting a blank one request detection.
-[[nodiscard]] inline std::string resolve_reader_format(const std::string &format) {
+[[nodiscard]] inline std::string resolve_detectable_format(const std::string &format) {
     return normalize_format(format, true);
 }
 
 /// @brief Resolve a format that must be stated. These paths never infer the
 ///        container type from content, so a blank format is rejected.
-[[nodiscard]] inline std::string require_explicit_format(const std::string &format) {
+[[nodiscard]] inline std::string resolve_format(const std::string &format) {
     return normalize_format(format, false);
 }
 
