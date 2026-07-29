@@ -222,7 +222,7 @@ namespace c2pa
 
     std::vector<unsigned char> Builder::sign(const std::string &format, std::istream &source, std::ostream &dest, Signer &signer)
     {
-        const std::string resolved_format = detail::normalize_format(format);
+        const std::string normalized_format = detail::normalize_format(format);
 
         // Caller's source/dest streams must outlive this call
         // Stream wrappers are stack locals that wrap the caller's streams
@@ -231,13 +231,13 @@ namespace c2pa
         const unsigned char *c2pa_manifest_bytes = nullptr;
 
         // c2pa_builder_sign() uses streams synchronously and completes before returning
-        auto result = c2pa_builder_sign(builder, resolved_format.c_str(), c_source.c_stream, c_dest.c_stream, signer.c2pa_signer(), &c2pa_manifest_bytes);
+        auto result = c2pa_builder_sign(builder, normalized_format.c_str(), c_source.c_stream, c_dest.c_stream, signer.c2pa_signer(), &c2pa_manifest_bytes);
         return detail::to_byte_vector(c2pa_manifest_bytes, result);
     }
 
     std::vector<unsigned char> Builder::sign(const std::string &format, std::istream &source, std::iostream &dest, Signer &signer)
     {
-        const std::string resolved_format = detail::normalize_format(format);
+        const std::string normalized_format = detail::normalize_format(format);
 
         // Caller's source/dest streams must outlive this call
         // Stream wrappers are stack locals that wrap the caller's streams
@@ -246,7 +246,7 @@ namespace c2pa
         const unsigned char *c2pa_manifest_bytes = nullptr;
 
         // c2pa_builder_sign() uses streams synchronously and completes before returning
-        auto result = c2pa_builder_sign(builder, resolved_format.c_str(), c_source.c_stream, c_dest.c_stream, signer.c2pa_signer(), &c2pa_manifest_bytes);
+        auto result = c2pa_builder_sign(builder, normalized_format.c_str(), c_source.c_stream, c_dest.c_stream, signer.c2pa_signer(), &c2pa_manifest_bytes);
         return detail::to_byte_vector(c2pa_manifest_bytes, result);
     }
 
@@ -283,13 +283,13 @@ namespace c2pa
 
     std::vector<unsigned char> Builder::sign(const std::string &format, std::istream &source, std::iostream &dest)
     {
-        const std::string resolved_format = detail::normalize_format(format);
+        const std::string normalized_format = detail::normalize_format(format);
 
         CppIStream c_source(source);
         CppIOStream c_dest(dest);
         const unsigned char *c2pa_manifest_bytes = nullptr;
 
-        auto result = c2pa_builder_sign_context(builder, resolved_format.c_str(), c_source.c_stream, c_dest.c_stream, &c2pa_manifest_bytes);
+        auto result = c2pa_builder_sign_context(builder, normalized_format.c_str(), c_source.c_stream, c_dest.c_stream, &c2pa_manifest_bytes);
         return detail::to_byte_vector(c2pa_manifest_bytes, result);
     }
 
@@ -396,27 +396,27 @@ namespace c2pa
 
     std::vector<unsigned char> Builder::data_hashed_placeholder(uintptr_t reserve_size, const std::string &format)
     {
-        const std::string resolved_format = detail::normalize_format(format);
+        const std::string normalized_format = detail::normalize_format(format);
 
         const unsigned char *c2pa_manifest_bytes = nullptr;
-        auto result = c2pa_builder_data_hashed_placeholder(builder, reserve_size, resolved_format.c_str(), &c2pa_manifest_bytes);
+        auto result = c2pa_builder_data_hashed_placeholder(builder, reserve_size, normalized_format.c_str(), &c2pa_manifest_bytes);
         return detail::to_byte_vector(c2pa_manifest_bytes, result);
     }
 
     std::vector<unsigned char> Builder::sign_data_hashed_embeddable(Signer &signer, const std::string &data_hash, const std::string &format, std::istream *asset)
     {
-        const std::string resolved_format = detail::normalize_format(format);
+        const std::string normalized_format = detail::normalize_format(format);
 
         int64_t result;
         const unsigned char *c2pa_manifest_bytes = nullptr;
         if (asset)
         {
             CppIStream c_asset(*asset);
-            result = c2pa_builder_sign_data_hashed_embeddable(builder, signer.c2pa_signer(), data_hash.c_str(), resolved_format.c_str(), c_asset.c_stream, &c2pa_manifest_bytes);
+            result = c2pa_builder_sign_data_hashed_embeddable(builder, signer.c2pa_signer(), data_hash.c_str(), normalized_format.c_str(), c_asset.c_stream, &c2pa_manifest_bytes);
         }
         else
         {
-            result = c2pa_builder_sign_data_hashed_embeddable(builder, signer.c2pa_signer(), data_hash.c_str(), resolved_format.c_str(), nullptr, &c2pa_manifest_bytes);
+            result = c2pa_builder_sign_data_hashed_embeddable(builder, signer.c2pa_signer(), data_hash.c_str(), normalized_format.c_str(), nullptr, &c2pa_manifest_bytes);
         }
         return detail::to_byte_vector(c2pa_manifest_bytes, result);
     }
@@ -436,10 +436,10 @@ namespace c2pa
     std::vector<unsigned char> Builder::placeholder(const std::string &format)
     {
         // The format selects the hash assertion written into the builder.
-        const std::string resolved_format = detail::normalize_format(format);
+        const std::string normalized_format = detail::normalize_format(format);
 
         const unsigned char *c2pa_manifest_bytes = nullptr;
-        auto result = c2pa_builder_placeholder(builder, resolved_format.c_str(), &c2pa_manifest_bytes);
+        auto result = c2pa_builder_placeholder(builder, normalized_format.c_str(), &c2pa_manifest_bytes);
         return detail::to_byte_vector(c2pa_manifest_bytes, result);
     }
 
@@ -475,19 +475,19 @@ namespace c2pa
 
     std::vector<unsigned char> Builder::sign_embeddable(const std::string &format)
     {
-        const std::string resolved_format = detail::normalize_format(format);
+        const std::string normalized_format = detail::normalize_format(format);
 
         const unsigned char *c2pa_manifest_bytes = nullptr;
-        auto result = c2pa_builder_sign_embeddable(builder, resolved_format.c_str(), &c2pa_manifest_bytes);
+        auto result = c2pa_builder_sign_embeddable(builder, normalized_format.c_str(), &c2pa_manifest_bytes);
         return detail::to_byte_vector(c2pa_manifest_bytes, result);
     }
 
     std::vector<unsigned char> Builder::format_embeddable(const std::string &format, std::vector<unsigned char> &data)
     {
-        const std::string resolved_format = detail::normalize_format(format);
+        const std::string normalized_format = detail::normalize_format(format);
 
         const unsigned char *c2pa_manifest_bytes = nullptr;
-        auto result = c2pa_format_embeddable(resolved_format.c_str(), data.data(), data.size(), &c2pa_manifest_bytes);
+        auto result = c2pa_format_embeddable(normalized_format.c_str(), data.data(), data.size(), &c2pa_manifest_bytes);
         return detail::to_byte_vector(c2pa_manifest_bytes, result);
     }
 

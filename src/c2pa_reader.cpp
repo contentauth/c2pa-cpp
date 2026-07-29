@@ -46,7 +46,7 @@ namespace c2pa
             throw C2paException("Invalid Context provider IContextProvider");
         }
 
-        const std::string resolved_format = detail::normalize_format(format);
+        const std::string normalized_format = detail::normalize_format(format);
 
         // Create the stream wrapper before the reader handle
         cpp_stream = std::make_unique<CppIStream>(stream);
@@ -58,7 +58,7 @@ namespace c2pa
 
         // Update reader with stream.
         // Note: c2pa_reader_with_stream consumes the reader pointer.
-        C2paReader* updated = c2pa_reader_with_stream(c2pa_reader, resolved_format.c_str(), cpp_stream->c_stream);
+        C2paReader* updated = c2pa_reader_with_stream(c2pa_reader, normalized_format.c_str(), cpp_stream->c_stream);
         c2pa_reader = nullptr;
         if (updated == nullptr) {
             throw C2paException();
@@ -220,10 +220,10 @@ namespace c2pa
 
     Reader::Reader(const std::string &format, std::istream &stream)
     {
-        const std::string resolved_format = detail::normalize_format(format);
+        const std::string normalized_format = detail::normalize_format(format);
 
         cpp_stream = std::make_unique<CppIStream>(stream);
-        c2pa_reader = c2pa_reader_from_stream(resolved_format.c_str(), cpp_stream->c_stream);
+        c2pa_reader = c2pa_reader_from_stream(normalized_format.c_str(), cpp_stream->c_stream);
         if (c2pa_reader == nullptr)
         {
             throw C2paException();
