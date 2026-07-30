@@ -1,6 +1,6 @@
-# Frequently-asked questions (FAQs)
+# Frequently asked questions
 
-## When do I use `Reader` versus `Builder`?
+## When do I use Reader versus Builder?
 
 **Use a `Reader` when the goal is only to inspect or extract data without creating a new manifest.**
 
@@ -32,7 +32,7 @@ builder.sign(source_path, output_path, signer);
 
 Every call to the `Builder` constructor or `Builder::from_archive()` creates a new `Builder`. There is no way to modify an existing signed manifest directly.
 
-### When to use both `Reader` and `Builder` together
+### When to use both Reader and Builder together
 
 **Use both when filtering content from an existing manifest into a new one. The `Reader` extracts data, application code filters it, and a new `Builder` receives only the selected parts.**
 
@@ -74,7 +74,7 @@ flowchart TD
 
 ## How should I add ingredients?
 
-There are two ways: using `add_ingredient()` and injecting ingredient JSON via `with_definition()`.  The table below summarizes these options.
+There are two ways: using `add_ingredient()` and injecting ingredient JSON via `with_definition()`. The table below summarizes these options.
 
 | Approach | What it does | When to use |
 | --- | --- | --- |
@@ -90,14 +90,14 @@ There are two distinct archive concepts:
     - Checkpointing work-in-progress before signing
     - Transmitting a `Builder` state across a network boundary
 
-- **Ingredient archives** contain the manifest store data (`.c2pa` binary) from ingredients that were added to a `Builder`. When a signed asset is added as an ingredient via `add_ingredient()`, the library extracts and stores its manifest store as `manifest_data` within the ingredient record. When the `Builder` is then serialized via `to_archive()`, these ingredient manifest stores are included. Use ingredient archives when:
+- **Ingredient archives** contain the manifest store data (`.c2pa` binary) from ingredients added to a `Builder`. When you add a signed asset as an ingredient via `add_ingredient()`, the library extracts and stores its manifest store as `manifest_data` within the ingredient record. When you then serialize the `Builder` via `to_archive()`, it includes these ingredient manifest stores. Use ingredient archives when:
     - Building an ingredients catalog for pick-and-choose workflows
     - Preserving provenance history from source assets
     - Transferring ingredient data between `Reader` and `Builder`
 
 See also [Working stores](working-stores.md).
 
-Key consideration for builder archives: `from_archive()` creates a new `Builder` with **default** context settings. If specific settings are needed (e.g., thumbnails disabled), use `with_archive()` on a `Builder` that already has the desired context:
+Key consideration for builder archives: `from_archive()` creates a new `Builder` with default context settings. If you need specific settings (e.g., thumbnails disabled), use `with_archive()` on a `Builder` that already has the desired context:
 
 ```cpp
 // Preserves the caller's context settings
@@ -106,7 +106,7 @@ builder.with_archive(archive_stream);
 builder.sign(source, output, signer);
 ```
 
-## Can a manifest be modified in place?
+## Can you modify a manifest in place?
 
 **No.** C2PA manifests are cryptographically signed. Any modification invalidates the signature. The only way to "modify" a manifest is to create a new `Builder` with the desired changes and sign it. This is by design: it ensures the integrity of the provenance chain.
 
@@ -114,12 +114,12 @@ builder.sign(source, output, signer);
 
 When creating a new manifest, the chain is preserved once the original asset is added as an ingredient. The ingredient carries the original asset's manifest data, so validators can trace the full history. If the original is not added as an ingredient, the provenance chain is broken: the new manifest has no link to the original. This might be intentional (starting fresh) or a mistake (losing provenance).
 
-## What replaced `read_file`, `read_ingredient_file`, and `sign_file`?
+## What replaced read_file, read_ingredient_file, and sign_file?
 
-These file-based functions not attached to an API-exposed object, `read_file`, `read_ingredient_file`, and `sign_file`, were deprecated, then removed. Each legacy function maps to another implementation path using existing APIs on the `Reader` or `Builder` objects:
+The C++ library deprecated, then removed, these file-based functions that were not attached to an API-exposed object: `read_file`, `read_ingredient_file`, and `sign_file`. Each legacy function maps to another implementation path using existing APIs on the `Reader` or `Builder` objects:
 
 | Removed function | Equivalent |
 | --- | --- |
 | `read_file(path)` | `Reader::from_asset(ctx, format, stream)` then `Reader::json()`. Pull binary resources with `Reader::get_resource(uri, dest)`. |
-| `read_ingredient_file(path, data_dir)` | `Builder::add_ingredient(ingredient_json, source_path)`, which adds ingredients to the active Builder. To recover the formed ingredient JSON (if needed) and its resources, archive the working store and read it back, or move the ingredient with the dedicated `write_ingredient_archive` / `add_ingredient_from_archive` APIs. There is no single-call replacement; but the full behavior (extract the ingredient JSON, thumbnail, and manifest_data to a directory, then reuse that directory to sign an asset using a Builder) can be reimplemented as shown in examples from [Migrating from `read_ingredient_file`](selective-manifests.md#migrating-from-read_ingredient_file). See also [Extracting ingredients from a working store](selective-manifests.md#extracting-ingredients-from-a-working-store). |
+| `read_ingredient_file(path, data_dir)` | `Builder::add_ingredient(ingredient_json, source_path)`, which adds ingredients to the active `Builder`. To recover the formed ingredient JSON (if needed) and its resources, archive the working store and read it back, or move the ingredient with the dedicated `write_ingredient_archive` / `add_ingredient_from_archive` APIs. There is no single-call replacement, but you can reimplement the full behavior (extract the ingredient JSON, thumbnail, and `manifest_data` to a directory, then reuse that directory to sign an asset using a `Builder`) as shown in examples from [Migrating from `read_ingredient_file`](selective-manifests.md#migrating-from-read_ingredient_file). See also [Extracting ingredients from a working store](selective-manifests.md#extracting-ingredients-from-a-working-store). |
 | `sign_file(src, dst, manifest, SignerInfo*, data_dir)` | `Builder::sign(source_path, dest_path, signer)` with a `Signer`. |

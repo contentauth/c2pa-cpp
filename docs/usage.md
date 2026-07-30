@@ -8,7 +8,7 @@ To use this library, include the header file in your code as follows:
 
 ## Read and validate an istream
 
-Use the `Reader` constructor to read C2PA data from a stream. This constructor examines the specified stream for C2PA data in the given format and its return value is a Reader that can be used to extract more information. Exceptions are thrown on errors.
+Use the `Reader` constructor to read C2PA data from a stream. This constructor examines the specified stream for C2PA data in the given format, and its return value is a `Reader` that you can use to extract more information. The constructor throws exceptions on errors.
 
 ```cpp
   c2pa::Context context;  // or Context(settings) or Context(json_string)
@@ -63,7 +63,7 @@ ifs.close();
 
 The manifest JSON string defines the C2PA manifest to add to the file.
 
-A sample JSON manifest is provided in [tests/fixtures/training.json](https://github.com/contentauth/c2pa-cpp/blob/main/tests/fixtures/training.json).
+A sample JSON manifest is provided in [`tests/fixtures/training.json`](https://github.com/contentauth/c2pa-cpp/blob/main/tests/fixtures/training.json).
 
 For example:
 
@@ -93,13 +93,14 @@ const std::string manifest_json = R"{
 
 ## Using settings
 
-The behavior of the SDK can be configured through various [settings](https://opensource.contentauthenticity.org/docs/manifest/json-ref/settings-schema/) loaded from JSON config files or JSON strings directly in the code.
+You can configure the behavior of the SDK through various [settings](https://opensource.contentauthenticity.org/docs/manifest/json-ref/settings-schema/) loaded from JSON config files or JSON strings directly in the code.
 
-SDK settings are set on the `Context` objects used by the Builder and Reader objects. 
-For full details see [Configuring the SDK with Context and Settings](context-settings.md).
+You set SDK settings on the `Context` objects used by the `Builder` and `Reader` objects.
+For full details, see [Configuring the SDK with Context and Settings](context-settings.md).
 
-> [!NOTE] If you don't specify a value for a property, then the SDK will use the default value. 
-> If you specify a value of null, then the property will be set to null, not the default.
+> [!NOTE]
+> If you don't specify a value for a property, the SDK uses the default value.
+> If you specify a value of null, the property is set to null, not the default.
 
 ### Creating a Context
 
@@ -128,7 +129,7 @@ c2pa::Context context(R"({
 
 #### Using a Context
 
-Contexts are passed by reference to `Builder` and `Reader` constructors. The context is used only at construction; the implementation copies context state into the reader/builder, so the context does not need to outlive them.
+You pass contexts by reference to `Builder` and `Reader` constructors. The constructor uses the context only at construction; the implementation copies context state into the `Reader`/`Builder`, so the context does not need to outlive them.
 
 ```cpp
 c2pa::Context context;
@@ -159,7 +160,7 @@ For example:
 
 ## Creating a Signer
 
-For testing, you can create a signer using any supported algorithm by a `Signer` constructor. For the list of supported signing algorithms, see [Creating and using an X.509 certificate](https://opensource.contentauthenticity.org/docs/c2patool/x_509).
+For testing, you can create a signer with any supported algorithm using a `Signer` constructor. For the list of supported signing algorithms, see [Creating and using an X.509 certificate](https://opensource.contentauthenticity.org/docs/c2patool/x_509).
 
 There are multiple constructor forms; this example shows how to create a signer with a public/private key pair.
 
@@ -168,10 +169,10 @@ There are multiple constructor forms; this example shows how to create a signer 
 ```
 
 The parameters are:
-- `<SIGNING_ALG>`- The `C2paSigningAlg` from `c2pa.h` associated with the signing function.
-- `<PUBLIC_CERTS>`- A buffer containing the public cert chain in PEM format.
-- `<PRIVATE_KEY>`- A buffer containing the private_key in PEM format.
-- `<TIMESTAMP_URL>`- An optional parameter containing a URL to a public Time Stamp Authority service.
+- `<SIGNING_ALG>` - The `C2paSigningAlg` from `c2pa.h` associated with the signing function.
+- `<PUBLIC_CERTS>` - A buffer containing the public cert chain in PEM format.
+- `<PRIVATE_KEY>` - A buffer containing the `private_key` in PEM format.
+- `<TIMESTAMP_URL>` - An optional parameter containing a URL to a public time stamp authority service.
 
 For example:
 
@@ -180,11 +181,11 @@ Signer signer = c2pa::Signer("Es256", certs, private_key, "http://timestamp.digi
 ```
 
 > [!WARNING]
-> Do not access a private key and certificate directly like this in production  because it's not secure. Instead use a hardware security module (HSM) and optionally a Key Management Service (KMS) to access the key; for example as shown in the [C2PA Python Example](https://github.com/contentauth/c2pa-python-example).
+> Do not access a private key and certificate directly like this in production because it's not secure. Instead, use a hardware security module (HSM) and optionally a key management service (KMS) to access the key, for example as shown in the [C2PA Python Example](https://github.com/contentauth/c2pa-python-example).
 
 ## Signing and embedding a manifest
 
-A media file may contain many manifests in a manifest store. The `active_manifest` property in the manifest store identifies the most recently-added manifest.  For a comprehensive reference to the JSON manifest structure, see the [CAI manifest store reference](https://opensource.contentauthenticity.org/docs/manifest/manifest-ref).
+A media file may contain many manifests in a manifest store. The `active_manifest` property in the manifest store identifies the most recently added manifest. For a comprehensive reference to the JSON manifest structure, see the [CAI manifest store reference](https://opensource.contentauthenticity.org/docs/manifest/manifest-ref).
 
 ```cpp
   auto manifest_data = builder.sign(image_path, output_path, signer);
@@ -192,8 +193,8 @@ A media file may contain many manifests in a manifest store. The `active_manifes
 
 The parameters are:
 
-- `<SOURCE_ASSET>`- A file path or an istream referencing the asset to sign.
-- `<OUTPUT_ASSET>`- A file path or an iostream referencing the asset to generate.
+- `<SOURCE_ASSET>` - A file path or an istream referencing the asset to sign.
+- `<OUTPUT_ASSET>` - A file path or an iostream referencing the asset to generate.
 - `<SIGNER>` - A `Signer` instance.
 
 For example:
@@ -205,14 +206,14 @@ For example:
 
 The C++ library can validate [CAWG identity assertions](https://cawg.io/identity/).
 
-## On trust configurations
+## Trust configurations
 
 C2PA maintains two [trust lists](https://opensource.contentauthenticity.org/docs/conformance/trust-lists/)
 to verify the authenticity and integrity of Content Credentials attached to digital media: the C2PA trust list and the C2PA time-stamping authority (TSA) trust list. The C2PA trust list is a list of X.509 certificate trust anchors (either root or subordinate certification authorities) that issue certificates to conforming generator products under the C2PA Certificate Policy. The C2PA time-stamping authority (TSA) trust list is a list of X.509 certificate trust anchors (either root or subordinate certification authorities) that issue time-stamp signing certificates to TSAs.
 
 Configure trust lists using the `Settings` and `Context` APIs. Using the `Context` API ensures proper propagation of settings (and trust) to `Builder` and `Reader` objects.
 
-Trust affects manifest validation status: a manifest whose trust chain was verified will be flagged as `Trusted`.
+Trust affects manifest validation status: if validation verifies a manifest's trust chain, it flags the manifest as `Trusted`.
 
 ## More examples
 

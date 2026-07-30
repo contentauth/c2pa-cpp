@@ -61,12 +61,12 @@ c2pa::Reader reader(context, "image.jpg");
 
 > [!NOTE]
 > The deprecated `c2pa::load_settings(data, format)` still works but you should migrate to `Context`. **Never mix the two approaches**. 
-> See [Migrating from deprecated APIS](#migrating-from-deprecated-apis).
+> See [Migrating from deprecated APIs](#migrating-from-deprecated-apis).
 
 ### Context lifecycle
 
 - **Non-copyable, moveable**: `Context` can be moved but not copied. After moving, `is_valid()` returns `false` on the source
-- **Pass as `shared_ptr`**: `Reader` and `Builder` retain a shared reference to the context, keeping it alive for their lifetime. This is required when using progress callbacks — without it, the callback can fire after the context is destroyed, causing a crash
+- **Pass as `shared_ptr`**: `Reader` and `Builder` retain a shared reference to the context, keeping it alive for their lifetime. This is required when using progress callbacks: without it, the callback can fire after the context is destroyed, causing a crash
 - **Reusable**: Use the same `shared_ptr<Context>` to create multiple readers and builders
 
 ```cpp
@@ -199,10 +199,10 @@ The callback signature is:
 bool callback(c2pa::ProgressPhase phase, uint32_t step, uint32_t total);
 ```
 
-- **`phase`** — which stage the SDK is in (see [`ProgressPhase` values](#progressphase-values) below).
-- **`step`** — monotonically increasing counter within the current phase, starting at `1`. Resets to `1` at the start of each new phase. Use as a liveness signal: a rising `step` means the SDK is making forward progress.
-- **`total`** — `0` = indeterminate (show a spinner); `1` = single-shot phase; `> 1` = determinate (`step / total` gives a completion fraction).
-- **Return value** — return `true` to continue, `false` to request cancellation (same effect as calling `context.cancel()`).
+- **`phase`**: which stage the SDK is in (see [ProgressPhase values](#progressphase-values) below).
+- **`step`**: monotonically increasing counter within the current phase, starting at `1`. Resets to `1` at the start of each new phase. Use as a liveness signal: a rising `step` means the SDK is making forward progress.
+- **`total`**: `0` = indeterminate (show a spinner); `1` = single-shot phase; `> 1` = determinate (`step / total` gives a completion fraction).
+- **Return value**: return `true` to continue, `false` to request cancellation (same effect as calling `context.cancel()`).
 
 **Do not throw** from the progress callback. Exceptions cannot cross the C/Rust boundary safely; if your callback throws, the wrapper catches it and the operation is aborted as a cancellation (you do not get your exception back at the call site). Use `return false`, `context.cancel()`, or application-side state instead.
 
@@ -238,9 +238,9 @@ try {
 cancel_thread.join();
 ```
 
-`cancel()` is safe to call when no operation is in progress — it is a no-op in that case (and a no-op if the `Context` is moved-from).
+`cancel()` is safe to call when no operation is in progress: it is a no-op in that case (and a no-op if the `Context` is moved-from).
 
-### `ProgressPhase` values
+### ProgressPhase values
 
 | Phase | When emitted |
 |-------|-------------|
@@ -485,7 +485,7 @@ Settings JSON has this top-level structure:
 | [`core`](#core-settings) | Core SDK behavior and performance tuning |
 | [`verify`](#verify-settings) | Validation and verification behavior |
 | [`builder`](#builder-settings) | Manifest creation and embedding behavior |
-| [`signer`](#signer-configuration) | C2PA signer configuration |
+| [`signer`](#signer-settings) | C2PA signer configuration |
 | [`cawg_x509_signer`](#cawg-x509-signer-configuration) | CAWG identity assertion signer configuration |
 
 The `version` property must be `1`. All other properties are optional.
@@ -509,7 +509,7 @@ The [`trust` properties](https://opensource.contentauthenticity.org/docs/manifes
 | `trust.trust_anchors` |  Default trust anchor root certificates (PEM format). **Replaces** the SDK's built-in trust anchors entirely. | — |
 | `trust.trust_config` |  Allowed Extended Key Usage (EKU) OIDs for certificate purposes (e.g., document signing: `1.3.6.1.4.1.311.76.59.1.9`). | — |
 
-#### Using `user_anchors` 
+#### Using user_anchors
 
 For development, add your test root CA without replacing the SDK's default trust store:
 
@@ -529,7 +529,7 @@ auto context = std::make_shared<c2pa::Context>(R"({
 c2pa::Reader reader(context, "signed_asset.jpg");
 ```
 
-#### Using `allowed_list`
+#### Using allowed_list
 
 For quick testing, bypass chain validation by explicitly allowing a specific certificate:
 
@@ -690,9 +690,9 @@ The [`builder` settings](https://opensource.contentauthenticity.org/docs/manifes
 #### Builder intent
 
 Use the [`builder.intent` setting](https://opensource.contentauthenticity.org/docs/manifest/json-ref/settings-schema/#builderintent) to specify the purpose of the claim, one of:
--  `{"Create": <TYPE>}`: Specifies a new digital creation, where `<TYPE>` is one of the [DigitalSourceType](https://opensource.contentauthenticity.org/docs/manifest/json-ref/settings-schema/#digitalsourcetype).
+- `{"Create": <TYPE>}`: Specifies a new digital creation, where `<TYPE>` is one of the [DigitalSourceType](https://opensource.contentauthenticity.org/docs/manifest/json-ref/settings-schema/#digitalsourcetype).
 - `{"Edit": null}`: An edit of a pre-existing parent asset.
-- `{"Update": null}`: An restricted version of `Edit` type for non-editorial changes.
+- `{"Update": null}`: A restricted version of the `Edit` type for non-editorial changes.
 
 > [!TIP]
 > For more information on intents, see [Intents](https://opensource.contentauthenticity.org/docs/rust-sdk/docs/intents) and [BuilderIntent in the SDK object reference.](https://opensource.contentauthenticity.org/docs/manifest/json-ref/settings-schema/#builderintent).
@@ -895,7 +895,6 @@ The SDK introduced Context-based APIs to replace constructors and functions that
 | `Builder(manifest_json)` | [`Builder(shared_ptr<IContextProvider>, manifest_json)`](#adding-a-context-parameter-to-reader-and-builder) |
 | `Reader(IContextProvider&, ...)` | [`Reader(shared_ptr<IContextProvider>, ...)`](#using-shared_ptr-instead-of-reference-for-reader-and-builder) |
 | `Builder(IContextProvider&, ...)` | [`Builder(shared_ptr<IContextProvider>, ...)`](#using-shared_ptr-instead-of-reference-for-reader-and-builder) |
-| `Builder::sign(..., ostream, ...)` | [`Builder::sign(..., iostream, ...)`](#using-iostream-instead-of-ostream-in-buildersign) |
 
 ### Replacing load_settings
 
@@ -974,7 +973,7 @@ c2pa::Builder builder(context, manifest_json);
 c2pa::Reader::from_asset(context, "image.jpg");
 ```
 
-The `shared_ptr` overloads accept any `shared_ptr<IContextProvider>`, so custom `IContextProvider` implementations work the same way, wrap them in a `shared_ptr` before passing.
+The `shared_ptr` overloads accept any `shared_ptr<IContextProvider>`, so custom `IContextProvider` implementations work the same way: wrap them in a `shared_ptr` before passing.
 
 #### About IContextProvider
 

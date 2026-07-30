@@ -52,9 +52,9 @@ by project committers. Read [GitHub's pull request documentation](https://help.g
 for more information on sending pull requests.
 
 Code submissions will need to pass all automated tests in place at the time of submission.
-These include such things as Rust code format, Clippy/lint checks, and unit test coverage.
+These include such things as code format, lint checks, and unit test coverage.
 
-We encourage you to raise an issue in GitHub before starting work on a major addition to the crate.
+We encourage you to raise an issue in GitHub before starting work on a major addition to the library.
 This will give us an opportunity to discuss API design and avoid duplicate efforts.
 
 ### Pull request titles

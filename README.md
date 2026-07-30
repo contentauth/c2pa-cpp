@@ -7,19 +7,19 @@ The [c2pa-cpp repository](https://github.com/contentauth/c2pa-cpp) implements C+
 Although this library works for plain C applications, the documentation assumes you're using C++, since that's most common for modern applications.
 
 <div class="hide-doxygen" >
-<div style={{display: 'none'}}>
+<div class="github-only">
 
-For the best experience, read the docs on the [CAI Open Source SDK documentation website](https://opensource.contentauthenticity.org/docs/c2pa-c).
+For the best experience, read the docs on the [CAI Open Source SDK documentation website](https://opensource.contentauthenticity.org/docs/c2pa-cpp).
 
 If you want to view the documentation in GitHub, see:
 - [Using the C++ library](docs/usage.md)
 - [Supported formats](https://github.com/contentauth/c2pa-rs/blob/main/docs/supported-formats.md)
 - [Configuring the SDK using `Context` and `Settings`](docs/context-settings.md)
 - [Using Builder intents](docs/intents.md) to ensure spec-compliant manifests
-- Using [working stores and archvies](docs/working-stores.md)
+- Using [working stores and archives](docs/working-stores.md)
 - Selectively constructing manifests by [filtering actions and ingredients](docs/selective-manifests.md)
 - Using the [embeddable API for low-level control over embedding manifests](docs/embeddable-api.md)
-- [Frequently-asked questions (FAQs)](docs/faqs.md)
+- [Frequently asked questions (FAQs)](docs/faqs.md)
 - [Release notes](docs/release-notes.md)
 
 </div>
@@ -45,12 +45,12 @@ target_link_libraries(myapp PRIVATE c2pa_cpp)
 
 This will automatically fetch, build, and link the `c2pa_cpp` library and its dependencies.
 
-> **Note:**
+> [!NOTE]
 > This project uses pre-built dynamic libraries from the [c2pa-rs](https://github.com/contentauth/c2pa-rs) repository. It should select the correct library for your platform. If your platform is not supported, you can build your own library using the c2pa_rs repo.
 
 ### Example usage
 
-See the [`examples/`](examples/) directory for sample applications that demonstrate how to use the library in practice.
+See the [`examples/`](https://github.com/contentauth/c2pa-cpp/tree/main/examples) directory for sample applications that demonstrate how to use the library in practice.
 
 ## Development
 
@@ -68,7 +68,7 @@ Enter this command to build the SDK:
 make release
 ```
 
-This will download the [pre-build libraries published with c2pa releases](https://github.com/contentauth/c2pa-rs/releases), build and link the C++ code.
+This will download the [prebuilt libraries published with c2pa releases](https://github.com/contentauth/c2pa-rs/releases), build and link the C++ code.
 
 The Makefile has a number of other targets; for example:
 - `test` to run unit tests
@@ -80,7 +80,7 @@ Results are saved in the `build` directory.
 
 ### Building using local sources
 
-This project can also be built entirely from source (without pre-built library download), with the pre-requisite that you will also need [c2pa-rs](https://github.com/contentauth/c2pa-rs) on the local machine, as well as the [Rust toolchain](https://rust-lang.org/tools/install/).
+This project can also be built entirely from source (without pre-built library download), with the prerequisite that you will also need [c2pa-rs](https://github.com/contentauth/c2pa-rs) on the local machine, as well as the [Rust toolchain](https://rust-lang.org/tools/install/).
 
 To build in this case, the build scripts need to be able to locate the `c2pa-rs` sources as well as the library this builds for linking. This is done by setting environment variables in the terminal where the builds will run.
 
@@ -104,7 +104,7 @@ export LD_LIBRARY_PATH="$(pwd)/build/release/tests:$LD_LIBRARY_PATH"
 
 ### Building the Emscripten/WebAssembly example
 
-The [`examples/emscripten_example.cpp`](examples/emscripten_example.cpp) file demonstrates using the c2pa C++ library compiled to WebAssembly via Emscripten. It includes reading manifests from files, streams, and using a custom HTTP resolver with `emscripten_fetch`.
+The [`examples/emscripten_example.cpp`](https://github.com/contentauth/c2pa-cpp/blob/main/examples/emscripten_example.cpp) file demonstrates using the c2pa C++ library compiled to WebAssembly via Emscripten. It includes reading manifests from files, streams, and using a custom HTTP resolver with `emscripten_fetch`.
 
 Prerequisites: Install the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html) (4.x or later recommended) and activate it in your shell:
 
@@ -145,7 +145,7 @@ AddressSanitizer: CHECK failed: sanitizer_malloc_mac.inc:189 "((!asan_init_is_ru
 This is an incompatibility between an older AppleClang sanitizer runtime and the host
 malloc. The fix is to build the sanitizer target with a newer LLVM/Clang (for example, Homebrew's `llvm`).
 
-To do so, install (or update) an `llvm` version. For instance, using homebrew::
+To do so, install (or update) an `llvm` version. For instance, using homebrew:
 
 ```sh
 brew install llvm
@@ -173,10 +173,9 @@ And finally run the test executable:
 ctest --test-dir build/debug --output-on-failure
 ```
 
-
 ### Building API documentation
 
-API documentation generated by Doxygen is automatically built on each PR.
+Doxygen automatically builds API documentation on each PR.
 
 To generate API docs locally, these are the main files:
 

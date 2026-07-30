@@ -1,6 +1,6 @@
 # Selective manifest construction
 
-You can use `Builder` and `Reader` together to selectively construct manifests&mdash;keeping only the parts you need and omitting the rest. This is useful when you don't want to include all ingredients in a working store (for example, when some ingredient assets are not visible).
+You can use `Builder` and `Reader` together to selectively construct manifests, keeping only the parts you need and omitting the rest. This is useful when you don't want to include all ingredients in a working store (for example, when some ingredient assets are not visible).
 
 This process is best described as *filtering* or *rebuilding* a working store:
 
@@ -10,7 +10,7 @@ This process is best described as *filtering* or *rebuilding* a working store:
 
 A manifest is a signed data structure attached to an asset that records provenance and which source assets (ingredients) contributed to it. It contains assertions (statements about the asset), ingredients (references to other assets), and references to binary resources (such as thumbnails).
 
-Since both `Reader` and `Builder` are **read-only** by design (neither has a `remove()` method), to exclude content you must **read what exists, filter to keep what you need, and create a new** `Builder` **with only that information**. This produces a new `Builder` instance—a "rebuild."
+Since both `Reader` and `Builder` are **read-only** by design (neither has a `remove()` method), to exclude content you must **read what exists, filter to keep what you need, and create a new** `Builder` **with only that information**. This produces a new `Builder` instance: a "rebuild."
 
 > [!IMPORTANT]
 > This process always creates a new `Builder`. The original signed asset and its manifest are never modified, neither is the starting working store. The `Reader` extracts data without side effects, and the `Builder` constructs a new manifest based on extracted data.
@@ -24,8 +24,6 @@ flowchart LR
     C -->|new Builder| D[New Builder]
     D -->|sign| E[New Asset]
 ```
-
-
 
 The fundamental workflow is:
 
@@ -75,7 +73,8 @@ Each example below creates a **new `Builder`** from filtered data. The original 
 
 When transferring ingredients from a `Reader` to a new `Builder`, you must transfer both the JSON metadata and the associated binary resources (thumbnails, manifest data). The JSON contains identifiers that reference those resources; the same identifiers must be used when calling `builder.add_resource()`.
 
-> **Transferring binary resources:** For each kept ingredient, call `reader.get_resource(id, stream)` for any `thumbnail` or `manifest_data` it contains, then `builder.add_resource(id, stream)` with the same identifier.
+> [!IMPORTANT]
+> For each kept ingredient, call `reader.get_resource(id, stream)` for any `thumbnail` or `manifest_data` it contains, then `builder.add_resource(id, stream)` with the same identifier.
 
 ### Keep only specific ingredients
 
@@ -172,8 +171,6 @@ flowchart TD
     style NI fill:#efe,stroke:#090
 ```
 
-
-
 ```cpp
 // Create a new Builder with a new definition
 c2pa::Builder builder(context);
@@ -209,7 +206,6 @@ builder.add_action(R"({
 
 ### Action JSON fields
 
-
 | Field | Required | Description |
 | --- | --- | --- |
 | `action` | Yes | Action identifier, e.g. `"c2pa.created"`, `"c2pa.opened"`, `"c2pa.placed"`, `"c2pa.color_adjustments"`, `"c2pa.filtered"` |
@@ -217,19 +213,18 @@ builder.add_action(R"({
 | `description` | No | Human-readable description of what happened |
 | `digitalSourceType` | Sometimes, depending on action | URI describing the digital source type (typically for `c2pa.created`) |
 
-
 ### Linking actions to ingredients
 
 When an action involves a specific ingredient, the ingredient is linked to the action using `ingredientIds` (in the action's `parameters`), referencing a matching key in the ingredient.
 
-#### How `ingredientIds` resolution works
+#### How ingredientIds resolution works
 
 The SDK matches each value in `ingredientIds` against ingredients using this priority:
 
 1. `label` on the ingredient (primary): if set and non-empty, this is used as the linking key.
 2. `instance_id` on the ingredient (fallback): used when `label` is absent or empty.
 
-#### Linking with `label`
+#### Linking with label
 
 The `label` field on an ingredient is the **primary** linking key. Set a `label` on the ingredient and reference it in the action's `ingredientIds`. The label can be any string: it acts as a linking key between the ingredient and the action.
 
@@ -334,7 +329,7 @@ builder.add_ingredient(R"({
 builder.sign(source_path, output_path, signer);
 ```
 
-#### Linking with `instance_id`
+#### Linking with instance_id
 
 When no `label` is set on an ingredient, the SDK matches `ingredientIds` against `instance_id`.
 
@@ -413,7 +408,7 @@ for (auto& assertion : manifest["assertions"]) {
 }
 ```
 
-#### When to use `label` vs `instance_id`
+#### When to use label vs. instance_id
 
 | Property | `label` | `instance_id` |
 | --- | --- | --- |
@@ -422,7 +417,6 @@ for (auto& assertion : manifest["assertions"]) {
 | **When to use** | JSON-defined manifests where the caller controls the ingredient definition | Programmatic workflows where a stable identifier persisting unchanged across rebuilds is needed (`read_ingredient_file()` is deprecated) |
 | **Survives signing** | SDK may reassign the actual assertion label | Unchanged |
 | **Stable across rebuilds** | The caller controls the build-time value; the post-signing label may change | Yes, always the same set value |
-
 
 Use `label` when defining manifests in JSON. Use `instance_id` when working programmatically with ingredients whose identity comes from other sources, or when a stable identifier that persists unchanged across rebuilds is needed.
 
@@ -434,7 +428,7 @@ There are two distinct types of archives, sharing the same binary format but bei
 
 ### Builder archives vs. ingredient archives
 
-A **builder archive** is a serialized snapshot of a `Builder` (i.e. of a working store). The term *working store* refers to the unsigned `Builder` itself; the *builder archive* is its serialized `.c2pa` form. The archive contains the manifest definition, all resources, and any ingredients that were added. It is created by `builder.to_archive()` and restored with `Builder::from_archive()` or `builder.with_archive()`.
+A **builder archive** is a serialized snapshot of a `Builder` (i.e. of a working store). The term *working store* refers to the unsigned `Builder` itself; the *builder archive* is its serialized `.c2pa` form. The archive contains the manifest definition, all resources, and any ingredients that were added. `builder.to_archive()` creates it, and `Builder::from_archive()` or `builder.with_archive()` restores it.
 
 An **ingredient archive** contains the manifest store from an asset that was added as an ingredient.
 
@@ -691,7 +685,7 @@ consumer.add_ingredient_from_archive(archive_a);
 consumer.sign(source_path, output_path, signer);
 ```
 
-#### Legacy: `to_archive` + Reader loop
+#### Legacy: to_archive + Reader loop
 
 > [!NOTE]
 > **Legacy approach.** The pattern below archives a multi-ingredient builder and uses a `Reader` loop to find ingredients by `instance_id`.
@@ -802,7 +796,8 @@ for (auto& action : actions) {
 }
 ```
 
-> **Naming convention:** Vendor parameters must use reverse domain notation with period-separated components (e.g., `com.mycompany.tool`, `net.example.session_id`). Some namespaces (e.g., `c2pa` or `cawg`) may be reserved.
+> [!NOTE]
+> Vendor parameters must use reverse domain notation with period-separated components (e.g., `com.mycompany.tool`, `net.example.session_id`). Some namespaces (e.g., `c2pa` or `cawg`) may be reserved.
 
 ### Extracting ingredients from a working store
 
@@ -1189,7 +1184,7 @@ For the linking rules, see [Linking an archived ingredient to an action](#linkin
 
 ### Merging multiple working stores
 
-In some cases you may need to merge ingredients from multiple working stores (builder archives) into a single `Builder`. This should be a **fallback strategy**—the recommended practice is to maintain a single active working store and add ingredients incrementally (archived ingredient catalogs help with this). Merging is available when multiple working stores must be consolidated.
+In some cases you may need to merge ingredients from multiple working stores (builder archives) into a single `Builder`. This should be a **fallback strategy**: the recommended practice is to maintain a single active working store and add ingredients incrementally (archived ingredient catalogs help with this). Merging is available when multiple working stores must be consolidated.
 
 When merging from multiple sources, resource identifier URIs can collide. Rename identifiers with a unique suffix when needed. Use two passes: (1) collect ingredients with collision handling, build the manifest, create the builder; (2) re-read each archive and transfer resources (use original ID for `get_resource()`, renamed ID for `add_resource()` when collisions occurred).
 
@@ -1254,7 +1249,7 @@ builder.sign(source_path, output_path, signer);
 
 ### Migrations
 
-#### Using `add_resource` instead of `set_base_path`
+#### Using add_resource instead of set_base_path
 
 `set_base_path` carries a `@deprecated` note in the C++ header. `add_resource` is its replacement, registering each resource directly on a `Builder` instance.
 
@@ -1318,7 +1313,7 @@ The asset itself is not in the directory: the directory holds metadata and a man
 }
 ```
 
-Two things decide how to re-add the ingredient: whether its asset is still available, and what the directory contains. The asset is checked first — `add_ingredient` needs an asset stream, so without one the ingredient is injected straight into the definition.
+Two things decide how to re-add the ingredient: whether its asset is still available, and what the directory contains. The asset is checked first, since `add_ingredient` needs an asset stream, so without one the ingredient is injected straight into the definition.
 
 ```mermaid
 flowchart TD
@@ -1523,7 +1518,7 @@ builder.sign(source_asset, output_path, signer);
 
 When the asset is gone, swap the `add_ingredient` + `set_base_path` step for the [no-asset route](#loading-an-ingredient-directory-without-using-an-asset-stream) above and still add the modern archive with `add_ingredient_from_archive`.
 
-##### Re-archiving an ingredient directory into the modern `.c2pa` format
+##### Re-archiving an ingredient directory into the modern .c2pa format
 
 The on-disk directory format is awkward to carry around: multiple files, on-disk relative references, a Builder-global `base_path`. If you still have the ingredients, convert each one to a modern dedicated ingredient archive once, then use only the archives. Loading a directory and calling `write_ingredient_archive` produces that archive, which bundles the manifest store and no longer depends on `base_path` or on the asset file.
 
@@ -1586,7 +1581,7 @@ builder.sign(source_asset, output_path, signer);
 
 An unknown id in `ingredientIds` is rejected at sign with `"Action ingredientId not found"`.
 
-#### Migrating from `read_ingredient_file`
+#### Migrating from read_ingredient_file
 
 The deprecated and removed function `read_ingredient_file(source_path, data_dir)` read an asset, returned a fully formed ingredient JSON, and wrote the ingredient's binary resources (thumbnail and manifest data) to `data_dir`, so a later signing step could load that directory and embed the ingredient. The behavior can be reimplemented with `Builder` and `Reader` objects: form the ingredient, archive it, read it back, write the resources to disk under stable non-colliding names, then reuse the directory on a Builder to sign.
 
@@ -1653,7 +1648,7 @@ An ingredient formed through `add_ingredient` from an asset stream or path alway
 
 ## Retrieving actions from a working store
 
-Actions are stored in the `c2pa.actions.v2` assertion. Use `Reader` to extract them from a signed asset or an archived Builder.
+The `c2pa.actions.v2` assertion stores actions. Use `Reader` to extract them from a signed asset or an archived Builder.
 
 ### Reading actions
 
@@ -1690,7 +1685,7 @@ c2pa::Reader reader(context, "application/c2pa", archive_file);
 
 ### Understanding the manifest tree
 
-The `Reader` returns a manifest store—a dictionary of manifests keyed by label (a URN like `contentauth:urn:uuid:...`). Conceptually it forms a tree: each manifest has assertions and ingredients; ingredients with `manifest_data` carry their own manifest store, which can have its own ingredients and assertions recursively. The `active_manifest` key indicates the root.
+The `Reader` returns a manifest store: a dictionary of manifests keyed by label (a URN like `contentauth:urn:uuid:...`). Conceptually it forms a tree: each manifest has assertions and ingredients; ingredients with `manifest_data` carry their own manifest store, which can have its own ingredients and assertions recursively. The `active_manifest` key indicates the root.
 
 ```mermaid
 flowchart TD
@@ -1760,7 +1755,7 @@ for (auto& ingredient : active_manifest["ingredients"]) {
 
 ## Filtering actions
 
-To remove actions, use the same read–filter–rebuild pattern: **read, pick the ones to keep, create a new Builder**.
+To remove actions, use the same read-filter-rebuild pattern: **read, pick the ones to keep, create a new Builder**.
 
 ```mermaid
 flowchart TD
@@ -1769,8 +1764,6 @@ flowchart TD
     FILT -->|"New Builder with 2 actions"| NB[New Builder]
     NB -->|sign| OUT["New with 2 actions only: opened, placed"]
 ```
-
-
 
 ### Basic action filtering
 
@@ -1820,7 +1813,7 @@ builder.sign(source_path, output_path, signer);
 
 Some actions reference ingredients (via `parameters.ingredients[].url` after signing). If keeping an action that references an ingredient, **the corresponding ingredient and its binary resources must also be kept**. If an ingredient is dropped, any actions that reference it must also be dropped (or updated).
 
-#### `c2pa.opened` action
+#### c2pa.opened action
 
 The `c2pa.opened` action is special because it must be the first action and it references the asset that was opened (the `parentOf` ingredient). When filtering:
 
@@ -1828,7 +1821,7 @@ The `c2pa.opened` action is special because it must be the first action and it r
 - **Keep the ingredient it references**: the `parentOf` ingredient linked via its `parameters.ingredients[].url`
 - Removing the ingredient that `c2pa.opened` points to will make the manifest invalid
 
-#### `c2pa.placed` action
+#### c2pa.placed action
 
 The `c2pa.placed` action references a `componentOf` ingredient that was composited into the asset. When filtering:
 
@@ -1947,8 +1940,6 @@ flowchart LR
         B1[Output Asset] ~~~ B2[Manifest bytes with store as sidecar or uploaded to server]
     end
 ```
-
-
 
 ```cpp
 c2pa::Builder builder(context, manifest_json);

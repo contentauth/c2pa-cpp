@@ -1,4 +1,4 @@
-# Release Notes
+# Release notes
 
 ## 3 Mar 2026
 
@@ -9,5 +9,5 @@ Additionally, this release adds support for:
 - Using [working stores and archives](working-stores.md).
 - Using `Builder` and `Reader` together to [selectively construct a manifest by filtering actions and ingredients](selective-manifests.md).
 
-For answers to frequently-asked questions about these features, see the [FAQs](faqs.md).
+For answers to frequently asked questions about these features, see the [FAQs](faqs.md).
 
