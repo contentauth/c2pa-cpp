@@ -50,7 +50,7 @@ This will automatically fetch, build, and link the `c2pa_cpp` library and its de
 
 ### Example usage
 
-See the [`examples/`](examples/) directory for sample applications that demonstrate how to use the library in practice.
+See the [`examples/`](https://github.com/contentauth/c2pa-cpp/tree/main/examples) directory for sample applications that demonstrate how to use the library in practice.
 
 ## Development
 
@@ -104,7 +104,7 @@ export LD_LIBRARY_PATH="$(pwd)/build/release/tests:$LD_LIBRARY_PATH"
 
 ### Building the Emscripten/WebAssembly example
 
-The [`examples/emscripten_example.cpp`](examples/emscripten_example.cpp) file demonstrates using the c2pa C++ library compiled to WebAssembly via Emscripten. It includes reading manifests from files, streams, and using a custom HTTP resolver with `emscripten_fetch`.
+The [`examples/emscripten_example.cpp`](https://github.com/contentauth/c2pa-cpp/blob/main/examples/emscripten_example.cpp) file demonstrates using the c2pa C++ library compiled to WebAssembly via Emscripten. It includes reading manifests from files, streams, and using a custom HTTP resolver with `emscripten_fetch`.
 
 Prerequisites: Install the [Emscripten SDK](https://emscripten.org/docs/getting_started/downloads.html) (4.x or later recommended) and activate it in your shell:
 

@@ -505,7 +505,7 @@ auto manifest_bytes = builder.sign_embeddable("image/jpeg");
 
 ## Class relationships
 
-This is a partial class diagram showing only the classes and methods relevant to the embeddable APIs. For the full API reference, see the [`c2pa.hpp`](../include/c2pa.hpp) header file.
+This is a partial class diagram showing only the classes and methods relevant to the embeddable APIs. For the full API reference, see the [`c2pa.hpp`](https://github.com/contentauth/c2pa-cpp/blob/main/include/c2pa.hpp) header file.
 
 ```mermaid
 classDiagram
