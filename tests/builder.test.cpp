@@ -7744,10 +7744,6 @@ TEST_F(BuilderTest, SignWithGeneratedCloudIngredient) {
     settings.set("verify.remote_manifest_fetch", "false");
     c2pa::Context context(settings);
 
-    // Create a Builder with an inline manifest.
-    // The asset is derived from the cloud ingredient, so the manifest opens it
-    // rather than declaring creation. `ingredientIds` links the action to the
-    // ingredient carrying the matching "label".
     json manifest = {
         {"claim_generator_info", json::array({{{"name", "c2pa-test"}, {"version", "1.0"}}})},
         {"assertions", json::array({
@@ -7815,7 +7811,6 @@ TEST_F(BuilderTest, SignWithGeneratedCloudIngredient) {
 
     c2pa::Reader reader(context, "image/jpeg", dest);
     auto parsed = json::parse(reader.json());
-    std::cout << reader.json() << std::endl;
     auto& active = parsed["manifests"][parsed["active_manifest"].get<std::string>()];
     ASSERT_TRUE(active.contains("ingredients"));
     ASSERT_EQ(active["ingredients"].size(), 1u);
