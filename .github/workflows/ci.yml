@@ -35,8 +35,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Ninja (Cmake build generator)
-        uses: seanmiddleditch/gha-setup-ninja@master
+      - name: Check cmake
+        run: cmake --version
+
+      - name: Check Ninja
+        run: ninja --version
+
+      - name: Configure
+        run: cmake -S . -B build -G Ninja
 
       - name: Setup MSVC toolchain on Windows
         if: matrix.os == 'windows-latest'
