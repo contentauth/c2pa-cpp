@@ -35,6 +35,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Check cmake
+        run: cmake --version
+
       - name: Check Ninja
         run: ninja --version
 
