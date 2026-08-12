@@ -7714,7 +7714,7 @@ TEST_F(BuilderTest, SignWithCloudIngredientOnlyClaimV2) {
     ASSERT_TRUE(active.contains("ingredients"));
     ASSERT_EQ(active["ingredients"].size(), 1u);
     EXPECT_EQ(active["ingredients"][0]["relationship"], "parentOf");
-    // Verify provenance is here in the signed manifest, on the ingredient
+    // Verify the backfilled provenance is here in the signed manifest, on the backfilled ingredient
     EXPECT_TRUE(active["ingredients"][0].contains("active_manifest"));
 }
 
@@ -7815,7 +7815,7 @@ TEST_F(BuilderTest, SignWithGeneratedCloudIngredient) {
     ASSERT_TRUE(active.contains("ingredients"));
     ASSERT_EQ(active["ingredients"].size(), 1u);
     EXPECT_EQ(active["ingredients"][0]["relationship"], "parentOf");
-    // Verify provenance is here in the signed manifest, on the ingredient
+    // Verify the backfilled provenance is here in the signed manifest, on the backfilled ingredient
     // Note the `validation_results` field on the ingredient will depend on what was backfilled
     EXPECT_TRUE(active["ingredients"][0].contains("active_manifest"));
 }
