@@ -7645,3 +7645,75 @@ TEST_F(BuilderTest, SidecarSignAcceptsUnknownFormat) {
         EXPECT_FALSE(manifest.empty()) << "format: " << format;
     }
 }
+
+TEST_F(BuilderTest, SignWithCloudIngredientOnlyClaimV2) {
+    c2pa::Settings settings;
+    settings.set("verify.verify_timestamp_trust", "false");
+    settings.set("verify.remote_manifest_fetch", "false");
+    c2pa::Context context(settings);
+
+    json manifest = {
+        {"claim_generator_info", json::array({{{"name", "c2pa-test"}, {"version", "1.0"}}})},
+        {"assertions", json::array({
+            {
+                {"label", "c2pa.actions.v2"},
+                {"data", {{"actions", json::array({
+                    {
+                        {"action", "c2pa.opened"},
+                        {"digitalSourceType",
+                         "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCreation"},
+                        {"parameters", {{"ingredientIds", json::array({"cloud-ingredient"})}}}
+                    }
+                })}}}
+            }
+        })}
+    };
+    auto builder = c2pa::Builder(context, manifest.dump());
+
+    // Add the resource as `cloud_manifest.c2pa`.
+    // That same identifier needs to be reused in the ingredient JSON, when adding the ingredient that references it.
+    std::ifstream store(c2pa_test::get_fixture_path("cloud_manifest.c2pa"), std::ios::binary);
+    builder.add_resource("cloud_manifest.c2pa", store);
+
+    // The ingredient JSON reuses `cloud_manifest.c2pa` as manifest_data identifier.
+    // Note the label is used to link the ingredient to an action,
+    // whereas manifest_data.identifier links its to its provenance resource.
+    std::string ingredient_json = R"({
+        "title": "Ingredient asset bytes test",
+        "format": "image/jpeg",
+        "instance_id": "12345",
+        "relationship": "parentOf",
+        "label": "cloud-ingredient",
+        "manifest_data": {
+            "format": "application/c2pa",
+            "identifier": "cloud_manifest.c2pa"
+        }
+    })";
+
+    std::ifstream cloud_asset(c2pa_test::get_fixture_path("cloud.jpg"), std::ios::binary);
+    ASSERT_TRUE(cloud_asset.is_open());
+
+    // Add the ingredient:
+    // - Use the JSON with the manifest_data fields set to the cloud_manifest.c2pa provenance bytes
+    // - Add the cloud asset bytes
+    builder.add_ingredient(ingredient_json, "image/jpeg", cloud_asset);
+    // `cloud_manifest.c2pa` is provenance added "separately" as resource.
+
+    auto signer = c2pa_test::create_test_signer();
+    std::ifstream source(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+    std::stringstream dest(std::ios::in | std::ios::out | std::ios::binary);
+    ASSERT_NO_THROW(builder.sign("image/jpeg", source, dest, signer));
+
+    dest.flush();
+    dest.seekp(0, std::ios::beg);
+    dest.seekg(0, std::ios::beg);
+
+    c2pa::Reader reader(context, "image/jpeg", dest);
+    auto parsed = json::parse(reader.json());
+    auto& active = parsed["manifests"][parsed["active_manifest"].get<std::string>()];
+    ASSERT_TRUE(active.contains("ingredients"));
+    ASSERT_EQ(active["ingredients"].size(), 1u);
+    EXPECT_EQ(active["ingredients"][0]["relationship"], "parentOf");
+    // Verify the backfilled provenance is here in the signed manifest, on the backfilled ingredient
+    EXPECT_TRUE(active["ingredients"][0].contains("active_manifest"));
+}
