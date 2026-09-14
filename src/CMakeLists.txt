@@ -118,7 +118,12 @@ else()
     message(STATUS "Using prebuilt c2pa_c binaries")
 
     set(C2PA_PREBUILT_ZIP "c2pa-v${C2PA_VERSION}-${C2PA_PREBUILT_ARCH}.zip")
-    set(C2PA_PREBUILT_URL "https://github.com/contentauth/c2pa-rs/releases/download/c2pa-v${C2PA_VERSION}/${C2PA_PREBUILT_ZIP}")
+
+    # Release candidates are published under a "c2pa-rc-v<version>" tag instead
+    # of the usual "c2pa-v<version>" tag, so allow the tag to be overridden
+    # independently of C2PA_VERSION (which still drives the asset filename above).
+    set(C2PA_PREBUILT_TAG "c2pa-v${C2PA_VERSION}" CACHE STRING "GitHub release tag used to fetch the prebuilt c2pa_c library")
+    set(C2PA_PREBUILT_URL "https://github.com/contentauth/c2pa-rs/releases/download/${C2PA_PREBUILT_TAG}/${C2PA_PREBUILT_ZIP}")
 
     message(STATUS "fetching c2pa_prebuilt url: ${C2PA_PREBUILT_URL}")
 

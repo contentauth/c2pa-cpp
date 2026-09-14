@@ -13,6 +13,12 @@ endif
 ifdef C2PA_RS_PATH
 	CMAKE_OPTS += -DC2PA_RS_PATH="$(C2PA_RS_PATH)"
 endif
+ifdef C2PA_VERSION
+	CMAKE_OPTS += -DC2PA_VERSION=$(C2PA_VERSION)
+endif
+ifdef C2PA_PREBUILT_TAG
+	CMAKE_OPTS += -DC2PA_PREBUILT_TAG=$(C2PA_PREBUILT_TAG)
+endif
 
 # Sanitizer builds need a compiler-rt that matches the running OS. On macOS 26+
 # the Apple clang (Xcode 16) AddressSanitizer runtime can abort at process startup
