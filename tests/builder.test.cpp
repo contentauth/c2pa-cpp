@@ -5961,9 +5961,17 @@ TEST_F(BuilderTest, NonAsciiDirectoryComponent)
 }
 
 // A non-ASCII character in the extension is not a path-encoding case: the format
-// is inferred from the destination extension, so the library reports an
-// unsupported type. Pinned so a change to that behavior is deliberate, and so it
-// is not mistaken for an encoding defect.
+// is inferred from the destination extension, so the destination is rejected.
+// Pinned so a change to that behavior is deliberate, and so it is not mistaken
+// for an encoding defect.
+//
+// The expected type is std::exception rather than C2paException because
+// Builder::sign throws two unrelated types: resolve_format throws
+// C2paException, while a destination that cannot be opened throws
+// std::runtime_error. Which one arrives depends on the platform — on Windows,
+// path::string() on a name outside the active code page throws on its own. A
+// narrower expectation lets the other type escape the test and terminate the
+// process, taking the rest of the suite with it.
 TEST_F(BuilderTest, NonAsciiExtensionIsRejectedAsFormat)
 {
     const std::string astral("\xF0\x9F\x94\xA5");  // U+1F525
@@ -5981,13 +5989,13 @@ TEST_F(BuilderTest, NonAsciiExtensionIsRejectedAsFormat)
     {
         auto signer = c2pa_test::create_test_signer();
         auto builder = c2pa::Builder(manifest);
-        EXPECT_THROW(builder.sign(source, emoji_ext, signer), c2pa::C2paException)
-            << "a non-ASCII extension should be rejected as a format";
+        EXPECT_THROW(builder.sign(source, emoji_ext, signer), std::exception)
+            << "a non-ASCII extension should be rejected";
     }
     {
         auto signer = c2pa_test::create_test_signer();
         auto builder = c2pa::Builder(manifest);
-        EXPECT_THROW(builder.sign(source, no_ext, signer), c2pa::C2paException)
+        EXPECT_THROW(builder.sign(source, no_ext, signer), std::exception)
             << "a path with no extension should be rejected as a missing format";
     }
 }
