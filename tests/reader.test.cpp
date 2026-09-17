@@ -398,6 +398,71 @@ TEST_F(ReaderTest, HasManifestUtf8PathUsingContext) {
     EXPECT_TRUE(reader.is_embedded());
 }
 
+// Reopen an asset whose name is not ASCII. Signing alone does not prove the name
+// survives, because a failure to reopen shows up only on read.
+//
+// Names are built from raw bytes rather than written as literals so they do not
+// depend on how a compiler reads this file. MSVC only receives /utf-8 through an
+// if(MSVC) guard, and the windows-11-arm CI runner has no MSVC setup step, so a
+// literal would test the toolchain's source decoding instead of the library.
+TEST_F(ReaderTest, ReadBackNonAsciiDestName) {
+    const std::string names[] = {
+        std::string("ascii"),
+        std::string("\xC3\xA4"),              // U+00E4, inside the BMP
+        std::string("\xF0\x9F\x94\xA5"),      // U+1F525, outside the BMP
+        std::string("\xE4\xB8\xAD\xE6\x96\x87"),  // U+4E2D U+6587
+    };
+
+    fs::path build_dir = fs::path(__FILE__).parent_path().parent_path() / "build";
+    if (!fs::exists(build_dir)) {
+        fs::create_directories(build_dir);
+    }
+
+    auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+    for (const auto& name : names) {
+        SCOPED_TRACE(name.c_str());
+
+        // Built here rather than through get_temp_path: that helper takes a
+        // std::string, and the implicit conversion to fs::path decodes using the
+        // active code page on Windows, which would corrupt the name before the
+        // library sees it. u8path states the encoding instead. It is deprecated
+        // in C++20, but this project builds as C++17.
+        const std::string filename = "reader-" + name + "-readback.jpg";
+#ifdef _WIN32
+        fs::path dest = build_dir / fs::u8path(filename);
+#else
+        fs::path dest = build_dir / fs::path(filename);
+#endif
+        temp_files.push_back(dest);
+
+        auto signer = c2pa_test::create_test_signer();
+        auto builder = c2pa::Builder(manifest);
+        ASSERT_NO_THROW(builder.sign(c2pa_test::get_fixture_path("A.jpg"), dest, signer));
+
+        // Check the name on disk still carries the bytes it was given. A
+        // conversion that replaces characters it cannot encode still produces a
+        // file, and distinct names collapse onto the same replacement, so
+        // reopening it would succeed and hide the loss.
+        ASSERT_TRUE(fs::exists(dest)) << "file was not created";
+#ifdef _WIN32
+        const std::string actual = dest.filename().u8string();
+#else
+        const std::string actual = dest.filename().string();
+#endif
+        EXPECT_NE(actual.find(name), std::string::npos)
+            << "name on disk lost the non-ASCII characters it was given";
+        EXPECT_EQ(actual.find('?'), std::string::npos)
+            << "name on disk contains a replacement character, so the conversion was lossy";
+
+        std::string manifest_json;
+        ASSERT_NO_THROW({
+            auto reader = c2pa::Reader(dest);
+            manifest_json = reader.json();
+        }) << "Reader should reopen a file named with non-ASCII characters";
+        EXPECT_TRUE(json::parse(manifest_json).contains("manifests"));
+    }
+}
+
 TEST_F(ReaderTest, FileNotFound)
 {
     try

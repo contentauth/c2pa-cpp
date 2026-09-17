@@ -5799,6 +5799,199 @@ TEST_F(BuilderTest, NonAsciiPathForReaderGetResource)
     EXPECT_TRUE(fs::exists(output_resource_path));
 }
 
+// Sign to destinations whose names are not ASCII, each against an ASCII control.
+// A control that fails means the case failed for some reason other than the name.
+// The extension stays ASCII so this isolates the name from format inference,
+// which Builder::sign derives from the destination extension.
+//
+// Names are built from raw bytes rather than written as literals so they do not
+// depend on how a compiler reads this file. MSVC only receives /utf-8 through an
+// if(MSVC) guard, and the windows-11-arm CI runner has no MSVC setup step, so a
+// literal would test the toolchain's source decoding instead of the library.
+TEST_F(BuilderTest, SignToNonAsciiDestName)
+{
+    struct Case {
+        const char* label;
+        std::string name;
+    };
+    const Case cases[] = {
+        {"ascii control", std::string("ascii")},
+        // U+00E4: inside the BMP, representable in several Windows code pages.
+        {"latin-1 (U+00E4)", std::string("\xC3\xA4")},
+        // U+1F525: outside the BMP, so a surrogate pair in UTF-16 and absent
+        // from every Windows code page. The BMP case can pass while this one
+        // fails, so both are needed to tell those two failures apart.
+        {"astral (U+1F525)", std::string("\xF0\x9F\x94\xA5")},
+        // U+4E2D U+6587: inside the BMP but outside Latin-1.
+        {"cjk (U+4E2D U+6587)", std::string("\xE4\xB8\xAD\xE6\x96\x87")},
+    };
+
+    auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+    for (const auto& test_case : cases) {
+        SCOPED_TRACE(test_case.label);
+
+        // u8path states the encoding: building fs::path from a narrow string
+        // decodes using the active code page on Windows, which cannot represent
+        // these names. Deprecated in C++20, but this project builds as C++17.
+        const std::string filename = test_case.name + ".jpg";
+#ifdef _WIN32
+        auto dest = get_temp_path(fs::u8path(filename));
+#else
+        auto dest = get_temp_path(fs::path(filename));
+#endif
+
+        auto signer = c2pa_test::create_test_signer();
+        auto builder = c2pa::Builder(manifest);
+
+        std::vector<unsigned char> manifest_data;
+        ASSERT_NO_THROW(manifest_data = builder.sign(
+            c2pa_test::get_fixture_path("A.jpg"), dest, signer))
+            << "sign should write to a destination named " << test_case.label;
+        EXPECT_FALSE(manifest_data.empty());
+
+        // Check the name on disk still carries the bytes it was given. A
+        // conversion that replaces characters it cannot encode still produces a
+        // file, and distinct names collapse onto the same replacement, so
+        // fs::exists alone would pass while the name was silently corrupted.
+        ASSERT_TRUE(fs::exists(dest)) << "file was not created";
+#ifdef _WIN32
+        const std::string actual = dest.filename().u8string();
+#else
+        const std::string actual = dest.filename().string();
+#endif
+        EXPECT_NE(actual.find(test_case.name), std::string::npos)
+            << "name on disk lost the non-ASCII characters it was given";
+        EXPECT_EQ(actual.find('?'), std::string::npos)
+            << "name on disk contains a replacement character, so the conversion was lossy";
+    }
+}
+
+// Read a source whose name is not ASCII, and use one as an ingredient.
+TEST_F(BuilderTest, NonAsciiSourceAndIngredient)
+{
+    const std::string names[] = {
+        std::string("ascii"),
+        std::string("\xC3\xA4"),              // U+00E4
+        std::string("\xF0\x9F\x94\xA5"),      // U+1F525, outside the BMP
+    };
+
+    auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+    for (const auto& name : names) {
+        SCOPED_TRACE(name.c_str());
+
+        const std::string source_name = name + "-source.jpg";
+#ifdef _WIN32
+        auto source = get_temp_path(fs::u8path(source_name));
+#else
+        auto source = get_temp_path(fs::path(source_name));
+#endif
+        fs::copy_file(c2pa_test::get_fixture_path("A.jpg"), source,
+                      fs::copy_options::overwrite_existing);
+
+        ASSERT_TRUE(fs::exists(source)) << "source copy was not created";
+#ifdef _WIN32
+        const std::string source_on_disk = source.filename().u8string();
+#else
+        const std::string source_on_disk = source.filename().string();
+#endif
+        EXPECT_NE(source_on_disk.find(name), std::string::npos)
+            << "source name on disk lost the non-ASCII characters it was given";
+        EXPECT_EQ(source_on_disk.find('?'), std::string::npos)
+            << "source name on disk contains a replacement character";
+
+        auto signer = c2pa_test::create_test_signer();
+        auto builder = c2pa::Builder(manifest);
+        ASSERT_NO_THROW(builder.add_ingredient("{\"title\":\"non-ascii ingredient\"}", source))
+            << "add_ingredient should open a non-ASCII source path";
+
+        const std::string dest_name = name + "-ingredient-out.jpg";
+#ifdef _WIN32
+        auto dest = get_temp_path(fs::u8path(dest_name));
+#else
+        auto dest = get_temp_path(fs::path(dest_name));
+#endif
+        std::vector<unsigned char> manifest_data;
+        ASSERT_NO_THROW(manifest_data = builder.sign(source, dest, signer))
+            << "sign should read a non-ASCII source path";
+        EXPECT_FALSE(manifest_data.empty());
+    }
+}
+
+// A directory named with non-ASCII characters, holding an ASCII filename.
+// Windows applies the same encoding to every component, and create_directories
+// runs on this one.
+TEST_F(BuilderTest, NonAsciiDirectoryComponent)
+{
+    const std::string dir_name("\xF0\x9F\x94\xA5");  // U+1F525, outside the BMP
+#ifdef _WIN32
+    const fs::path dir_leaf = fs::u8path("builder-unicode-dir-" + dir_name);
+#else
+    const fs::path dir_leaf = fs::path("builder-unicode-dir-" + dir_name);
+#endif
+    fs::path build_dir = fs::path(__FILE__).parent_path().parent_path() / "build";
+    fs::path dir = build_dir / dir_leaf;
+
+    std::error_code ec;
+    fs::create_directories(dir, ec);
+    ASSERT_FALSE(ec) << "create_directories failed for a non-ASCII directory name";
+    temp_dirs.push_back(dir);
+
+    ASSERT_TRUE(fs::exists(dir)) << "directory was not created";
+#ifdef _WIN32
+    const std::string dir_on_disk = dir.filename().u8string();
+#else
+    const std::string dir_on_disk = dir.filename().string();
+#endif
+    EXPECT_NE(dir_on_disk.find(dir_name), std::string::npos)
+        << "directory name on disk lost the non-ASCII characters it was given";
+    EXPECT_EQ(dir_on_disk.find('?'), std::string::npos)
+        << "directory name on disk contains a replacement character";
+
+    auto dest = dir / "inside.jpg";
+    auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+    auto signer = c2pa_test::create_test_signer();
+    auto builder = c2pa::Builder(manifest);
+
+    std::vector<unsigned char> manifest_data;
+    ASSERT_NO_THROW(manifest_data = builder.sign(
+        c2pa_test::get_fixture_path("A.jpg"), dest, signer))
+        << "sign should write into a non-ASCII directory";
+    EXPECT_FALSE(manifest_data.empty());
+    EXPECT_TRUE(fs::exists(dest));
+}
+
+// A non-ASCII character in the extension is not a path-encoding case: the format
+// is inferred from the destination extension, so the library reports an
+// unsupported type. Pinned so a change to that behavior is deliberate, and so it
+// is not mistaken for an encoding defect.
+TEST_F(BuilderTest, NonAsciiExtensionIsRejectedAsFormat)
+{
+    const std::string astral("\xF0\x9F\x94\xA5");  // U+1F525
+    auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+    auto source = c2pa_test::get_fixture_path("A.jpg");
+
+#ifdef _WIN32
+    auto emoji_ext = get_temp_path(fs::u8path("emoji-ext." + astral));
+    auto no_ext = get_temp_path(fs::u8path("no-extension-" + astral));
+#else
+    auto emoji_ext = get_temp_path(fs::path("emoji-ext." + astral));
+    auto no_ext = get_temp_path(fs::path("no-extension-" + astral));
+#endif
+
+    {
+        auto signer = c2pa_test::create_test_signer();
+        auto builder = c2pa::Builder(manifest);
+        EXPECT_THROW(builder.sign(source, emoji_ext, signer), c2pa::C2paException)
+            << "a non-ASCII extension should be rejected as a format";
+    }
+    {
+        auto signer = c2pa_test::create_test_signer();
+        auto builder = c2pa::Builder(manifest);
+        EXPECT_THROW(builder.sign(source, no_ext, signer), c2pa::C2paException)
+            << "a path with no extension should be rejected as a missing format";
+    }
+}
+
 // Sign a file using a Signer from the Builder's Context, then read back
 TEST_F(BuilderTest, SignFileWithContextSigner) {
     auto image_path = c2pa_test::get_fixture_path("A.jpg");
