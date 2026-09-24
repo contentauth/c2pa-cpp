@@ -5029,16 +5029,18 @@ TEST_F(BuilderTest, LinkArchiveTwoIngredientsUsingLabels)
         {"assertions", json::array({
             {
                 {"label", "c2pa.actions.v2"},
+                // The c2pa.opened action here serves as the manifest's sole leading
+                // action, so this is not paired with created_first_action() as well; a
+                // manifest cannot have both a c2pa.created and a c2pa.opened action.
                 {"data", {{"actions", json::array({
-                    created_first_action(),
-                    {
-                        {"action", "c2pa.placed"},
-                        {"parameters", {{"ingredientIds", json::array({"ingredient-for-placed"})}}}
-                    },
                     {
                         {"action", "c2pa.opened"},
                         {"digitalSourceType", "http://cv.iptc.org/newscodes/digitalsourcetype/digitalCreation"},
                         {"parameters", {{"ingredientIds", json::array({"ingredient-for-opened"})}}}
+                    },
+                    {
+                        {"action", "c2pa.placed"},
+                        {"parameters", {{"ingredientIds", json::array({"ingredient-for-placed"})}}}
                     }
                 })}}}
             }
