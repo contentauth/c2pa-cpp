@@ -70,20 +70,6 @@ make release
 
 This will download the [prebuilt libraries published with c2pa releases](https://github.com/contentauth/c2pa-rs/releases), build and link the C++ code.
 
-The selected native SDK release is c2pa-rs **0.91.7**, including its eMudhra
-TLS distrust updates. CMake downloads and the Emscripten example's `curl`
-download use the build host's TLS implementation and trust store, not the
-SDK's roots. Keep those tools and their CA stores updated separately (including
-`ca-certificates` in container builds).
-
-Applications that supply `ContextBuilder::with_http_resolver` are responsible
-for their resolver's TLS verification and trust-store updates. In particular,
-the Emscripten example delegates HTTP to `emscripten_fetch`, so its HTTPS trust
-is controlled by the browser or JavaScript host, not the Rust SDK. Updating the
-SDK alone does not update those stores. See the
-[eMudhra incident guidance](https://emudhra.we-have-a-problem.com/) for affected
-certificate chains and patched trust-store versions.
-
 The Makefile has a number of other targets; for example:
 - `test` to run unit tests
 - `examples` to build and run the C++ examples.
@@ -95,11 +81,6 @@ Results are saved in the `build` directory.
 ### Building using local sources
 
 This project can also be built entirely from source (without pre-built library download), with the prerequisite that you will also need [c2pa-rs](https://github.com/contentauth/c2pa-rs) on the local machine, as well as the [Rust toolchain](https://rust-lang.org/tools/install/).
-
-Use the `c2pa-v0.91.7` tag for the matching native release. Local-source builds
-use the checkout supplied through `C2PA_RS_PATH`; they do not select or update
-that checkout automatically. Likewise, consumers using `C2PA_C_LIB_OVERRIDE`
-must update their replacement native library themselves.
 
 To build in this case, the build scripts need to be able to locate the `c2pa-rs` sources as well as the library this builds for linking. This is done by setting environment variables in the terminal where the builds will run.
 
