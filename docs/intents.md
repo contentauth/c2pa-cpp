@@ -52,7 +52,7 @@ You can set the intent on a `Builder` instance by:
 - [Using Context](#using-context)
 - [Using `set_intent` on the `Builder`](#using-set_intent-on-builder)
 
-Don't set intent using the deprecated `load_settings()` function. For existing code, see [Context and Settings - Migrating from deprecated APIs](context-settings.md#migrating-from-deprecated-apis).
+The deprecated `load_settings()` function has been removed. For existing code, see [Context and Settings - Migrating from deprecated APIs](context-settings.md#migrating-from-deprecated-apis).
 
 ### Using Context
 
@@ -485,4 +485,3 @@ c2pa::Builder builder(context, R"({})");
 builder.set_intent(Update);
 builder.sign("signed_asset.jpg", "updated_asset.jpg", signer);
 ```
-

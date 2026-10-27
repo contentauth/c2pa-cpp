@@ -883,7 +883,7 @@ c2pa::Context context(R"({
 
 ## Migrating from deprecated APIs
 
-The SDK introduced Context-based APIs to replace constructors and functions that relied on thread-local state. The older APIs still compile but produce deprecation warnings. This section covers each deprecation that involves passing a `Context`, and explains the `Builder::sign` overloads.
+The SDK introduced Context-based APIs to replace constructors and functions that relied on thread-local state. `load_settings` has been removed; the older Reader and Builder constructors remain deprecated and now use default Contexts. This section covers migration to an explicit `Context`, and explains the `Builder::sign` overloads.
 
 ### Quick reference
 
@@ -898,7 +898,7 @@ The SDK introduced Context-based APIs to replace constructors and functions that
 
 ### Replacing load_settings
 
-`c2pa::load_settings(data, format)` sets thread-local settings that `Reader` and `Builder` pick up implicitly. Replace it with a `Context` that you pass explicitly.
+The removed `c2pa::load_settings(data, format)` function set thread-local settings that `Reader` and `Builder` picked up implicitly. Replace it with a `Context` that you pass explicitly.
 
 | Aspect | load_settings (legacy) | Context |
 |--------|------------------------|---------|
