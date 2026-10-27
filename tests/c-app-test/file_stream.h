@@ -95,25 +95,32 @@ void release_stream(C2paStream *stream)
     c2pa_release_stream(stream);
 }
 
-C2paStream *open_file_stream(const char *path, const char *mode)
+typedef struct FileStream {
+    FILE *file;
+    C2paStream *stream;
+} FileStream;
+
+FileStream open_file_stream(const char *path, const char *mode)
 {
-    FILE *file = fopen(path, mode);
-    if (file != NULL)
-    {
-        // printf("file open = %0lx\n", (unsigned long)file);
-        return create_file_stream(file);
+    FileStream result = {NULL, NULL};
+    result.file = fopen(path, mode);
+    if (result.file != NULL) {
+        result.stream = create_file_stream(result.file);
+        if (result.stream == NULL) {
+            fclose(result.file);
+            result.file = NULL;
+        }
     }
-    return NULL;
+    return result;
 }
 
-int close_file_stream(C2paStream *stream)
+int close_file_stream(FileStream stream)
 {
-    if (stream == NULL) {
+    if (stream.stream == NULL) {
         return -1;
     }
-    FILE *file = (FILE *)stream->context;
-    int result = fclose(file);
-    c2pa_release_stream(stream);
+    c2pa_release_stream(stream.stream);
+    int result = fclose(stream.file);
     return result;
 }
 

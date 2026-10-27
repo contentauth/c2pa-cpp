@@ -50,6 +50,65 @@
 
 namespace c2pa
 {
+    /// Borrowed views, valid only for the lifetime of their owner or callback.
+    struct ConstBytes {
+        const unsigned char* data;
+        size_t size;
+    };
+
+    struct MutableBytes {
+        unsigned char* data;
+        size_t size;
+    };
+
+    /// Write a signature in place and return its byte count, or a negative error.
+    /// Views must not be retained. Captured state must support concurrent calls.
+    using SignerIntoFunc = std::function<intptr_t(ConstBytes, MutableBytes)>;
+
+    class ByteBuffer;
+    namespace detail {
+        ByteBuffer to_byte_buffer(const unsigned char* data, int64_t size);
+    }
+
+    /// Owns read-only native bytes without copying. Never free data() yourself.
+    /// Moves transfer the allocation without changing its address. Destruction or
+    /// replacement of the owning buffer invalidates views and releases via c2pa_free.
+    class C2PA_CPP_API ByteBuffer {
+    public:
+        ByteBuffer() noexcept = default;
+        ByteBuffer(const ByteBuffer&) = delete;
+        ByteBuffer& operator=(const ByteBuffer&) = delete;
+        ByteBuffer(ByteBuffer&& other) noexcept
+            : data_(std::exchange(other.data_, nullptr)),
+              size_(std::exchange(other.size_, 0)) {}
+        ByteBuffer& operator=(ByteBuffer&& other) noexcept {
+            if (this != &other) {
+                c2pa_free(data_);
+                data_ = std::exchange(other.data_, nullptr);
+                size_ = std::exchange(other.size_, 0);
+            }
+            return *this;
+        }
+        ~ByteBuffer() { c2pa_free(data_); }
+
+        const unsigned char* data() const noexcept { return data_; }
+        size_t size() const noexcept { return size_; }
+        bool empty() const noexcept { return size_ == 0; }
+        const unsigned char* begin() const noexcept { return data_; }
+        const unsigned char* end() const noexcept { return size_ == 0 ? data_ : data_ + size_; }
+        ConstBytes view() const noexcept { return {data_, size_}; }
+        std::vector<unsigned char> to_vector() const {
+            return empty() ? std::vector<unsigned char>{}
+                           : std::vector<unsigned char>(begin(), end());
+        }
+
+    private:
+        friend ByteBuffer detail::to_byte_buffer(const unsigned char*, int64_t);
+        ByteBuffer(const unsigned char* data, size_t size) noexcept : data_(data), size_(size) {}
+        const unsigned char* data_ = nullptr;
+        size_t size_ = 0;
+    };
+
     /// @typedef SignerInfo
     /// @brief Type alias for C2paSignerInfo from the C API.
     typedef C2paSignerInfo SignerInfo;
@@ -153,6 +212,10 @@ namespace c2pa
     /// - External implementations cannot be used in an uninitialized state
     /// - A consistent validation pattern exists across all context-using classes
     /// - Errors are caught early at construction time rather than during operations
+    ///
+    /// Providers adopting ContextBuilder::release() must also retain its
+    /// signer_callback_owner until all native objects using that signer are
+    /// freed. Free native handles before destroying either callback owner.
     ///
     /// @par Standard Context Implementation
     /// The built-in Context class always returns true from is_valid() after
@@ -401,7 +464,9 @@ namespace c2pa
             /// @details The callback is invoked synchronously whenever the SDK needs to
             ///          make an HTTP request (remote manifest fetch, OCSP, timestamp, etc.).
             ///          The callback receives a C2paHttpRequest and must fill in a C2paHttpResponse.
-            ///          The response body must be allocated with malloc(); the underlying native library will call free().
+            ///          The response body must be allocated with malloc(); the native library
+            ///          reads it without an intermediate copy and calls free() when the
+            ///          response is dropped, including error paths. Do not retain or free it.
             /// @param user_data Opaque user pointer passed to every callback invocation (may be nullptr).
             /// @param callback Function pointer matching C2paHttpResolverCallback.
             /// @return Reference to this ContextBuilder for method chaining.
@@ -416,7 +481,9 @@ namespace c2pa
 
             /// @brief Result of ContextBuilder::release(): the raw native builder handle
             ///        paired with the heap-owned progress callback (if any).
-            /// @details The caller takes joint ownership. If `callback_owner` is non-null,
+            /// @details The caller takes joint ownership of all three fields.
+            ///          signer_callback_owner must outlive every native object using
+            ///          the signer, including contexts and derived builders. If `callback_owner` is non-null,
             ///          the native side stores a raw pointer into it and will invoke the
             ///          callback until the native context built from `builder` is freed.
             ///          Therefore `callback_owner` must remain alive at least until the
@@ -426,6 +493,8 @@ namespace c2pa
             struct ReleasedBuilder {
                 C2paContextBuilder* builder;
                 std::unique_ptr<ProgressCallbackFunc> callback_owner;
+                /// Keep alive until all native contexts/builders using the signer are freed.
+                std::unique_ptr<SignerIntoFunc> signer_callback_owner = nullptr;
             };
 
             /// @brief Release ownership of the underlying C2paContextBuilder handle and
@@ -438,8 +507,8 @@ namespace c2pa
             ///          Callers must keep ReleasedBuilder::callback_owner alive for as
             ///          long as the native context built from ReleasedBuilder::builder
             ///          exists.
-            /// @return ReleasedBuilder holding both the native builder and (optionally)
-            ///         the owning unique_ptr for the progress callback. Fields are null
+            /// @return ReleasedBuilder holding the native builder and (optionally)
+            ///         both callback owners. Fields are null
             ///         when moved-from.
             [[nodiscard]] ReleasedBuilder release() noexcept;
 
@@ -448,6 +517,7 @@ namespace c2pa
             // so destruction (reverse of declaration) frees context_builder first, while
             // the callback heap block is still live, then releases pending_callback_.
             std::unique_ptr<ProgressCallbackFunc> pending_callback_;
+            std::unique_ptr<SignerIntoFunc> pending_signer_callback_;
             C2paContextBuilder* context_builder;
         };
 
@@ -506,6 +576,10 @@ namespace c2pa
         Context(C2paContext* ctx,
                 std::unique_ptr<ProgressCallbackFunc> callback) noexcept;
 
+        /// Adopt a native context together with both callback owners from release().
+        Context(C2paContext* ctx, std::unique_ptr<ProgressCallbackFunc> callback,
+                std::unique_ptr<SignerIntoFunc> signer_callback) noexcept;
+
         /// @brief Request cancellation of any in-progress operation on this context.
         ///
         /// @details Safe to call from another thread while this Context remains valid
@@ -527,21 +601,12 @@ namespace c2pa
         /// with a progress callback via ContextBuilder::with_progress_callback().
         /// Destroyed after `context`.
         std::unique_ptr<ProgressCallbackFunc> callback_owner_;
+        std::unique_ptr<SignerIntoFunc> signer_callback_owner_;
     };
 
     /// @brief Get the version of the C2PA library.
     /// @return Version string.
     std::string C2PA_CPP_API version();
-
-    /// @brief Load C2PA settings from a string in a given format.
-    /// @param data The configuration data to load.
-    /// @param format The mimetype of the string.
-    /// @throws C2paException for errors encountered by the C2PA library.
-    /// @deprecated Use Context constructors or Context::ContextBuilder instead for better thread safety.
-    ///             Will be removed when c2pa-c moves to c2pa-rs 0.92.0.
-    [[deprecated("Use Context(json), Context(settings), or Context::ContextBuilder instead. "
-                 "Will be removed when c2pa-c moves to c2pa-rs 0.92.0.")]]
-    void C2PA_CPP_API load_settings(const std::string& data, const std::string& format);
 
     /// @defgroup StreamWrappers Stream wrappers for C2PA C API
     /// @brief C++ stream types that adapt stream types to C2paStream.
@@ -555,7 +620,7 @@ namespace c2pa
 
     /// @brief Input stream IStream wrapper for C2paStream.
     /// @details This class is used to wrap an input stream for use with the C2PA library.
-    class C2PA_CPP_API CppIStream : public C2paStream
+    class C2PA_CPP_API CppIStream
     {
     public:
         /// @brief Pointer to the underlying C2paStream.
@@ -618,7 +683,7 @@ namespace c2pa
 
     /// @brief Output stream OStream wrapper for C2paStream.
     /// @details This class is used to wrap an output stream for use with the C2PA library.
-    class C2PA_CPP_API CppOStream : public C2paStream
+    class C2PA_CPP_API CppOStream
     {
     public:
         /// @brief Pointer to the underlying C2paStream.
@@ -678,7 +743,7 @@ namespace c2pa
 
     /// @brief IOStream Class wrapper for C2paStream.
     /// @details This class is used to wrap an input/output stream for use with the C2PA library.
-    class C2PA_CPP_API CppIOStream : public C2paStream
+    class C2PA_CPP_API CppIOStream
     {
     public:
         /// @brief Pointer to the underlying C2paStream.
@@ -1047,14 +1112,16 @@ namespace c2pa
         friend class Context::ContextBuilder;
 
     private:
-        C2paSigner *signer;
+        C2paSigner *signer = nullptr;
+        std::unique_ptr<SignerIntoFunc> callback_owner_;
 
         /// @brief Transfers ownership of the underlying C2paSigner pointer out
         ///        of this wrapper, without freeing it.
         /// @details Used by ContextBuilder::with_signer() to pass the raw pointer
-        ///          to c2pa_context_builder_set_signer(), which takes ownership on
-        ///          the Rust side via Box::from_raw. After this call the Signer
-        ///          wrapper holds nullptr and its destructor is a no-op.
+        ///          to c2pa_context_builder_set_signer(), which consumes it on
+        ///          the Rust side. After this call the Signer
+        ///          wrapper holds nullptr. ContextBuilder separately transfers
+        ///          callback_owner_ after the native call succeeds.
         ///          This is not the same as c2pa_signer_free(), which destroys
         ///          the signer. Similar to std::unique_ptr::release().
         /// @return Raw C2paSigner pointer, or nullptr if already released.
@@ -1081,6 +1148,14 @@ namespace c2pa
         /// @throws C2paException if signer creation fails.
         Signer(SignerFunc *callback, C2paSigningAlg alg, const std::string &sign_cert, const std::string &tsa_uri);
 
+        /// Zero-copy signing with a capturing callable in stable heap storage.
+        /// Writes at most signature.size bytes and returns their count, or a negative
+        /// error. Exceptions become I/O errors; oversized results are rejected.
+        /// Concurrent signing requires thread-safe captured state. Callback views
+        /// are borrowed only until the callback returns.
+        Signer(SignerIntoFunc callback, C2paSigningAlg alg,
+               const std::string &sign_cert, const std::string &tsa_uri);
+
         /// @brief Create a signer from a Signer pointer and take ownership of that pointer.
         /// @param c_signer The C2paSigner pointer (must be non-null).
         Signer(C2paSigner *c_signer) : signer(c_signer) {
@@ -1103,13 +1178,16 @@ namespace c2pa
 
         /// @brief Move constructor.
         /// @param other Signer to move from.
-        Signer(Signer&& other) noexcept : signer(std::exchange(other.signer, nullptr)) {
+        Signer(Signer&& other) noexcept
+            : signer(std::exchange(other.signer, nullptr)),
+              callback_owner_(std::move(other.callback_owner_)) {
         }
 
         Signer& operator=(Signer&& other) noexcept {
             if (this != &other) {
                 c2pa_free(signer);
                 signer = std::exchange(other.signer, nullptr);
+                callback_owner_ = std::move(other.callback_owner_);
             }
             return *this;
         }
@@ -1330,6 +1408,14 @@ namespace c2pa
         /// @throws C2paException if the context has no signer or on other errors.
         std::vector<unsigned char> sign(const std::filesystem::path &source_path, const std::filesystem::path &dest_path);
 
+        /// Zero-copy siblings of sign(). Returned read-only bytes own their native
+        /// allocation independently of the Builder. Call to_vector() for an explicit copy.
+        ByteBuffer sign_to_buffer(const std::string &format, std::istream &source, std::ostream &dest, Signer &signer);
+        ByteBuffer sign_to_buffer(const std::string &format, std::istream &source, std::iostream &dest, Signer &signer);
+        ByteBuffer sign_to_buffer(const std::filesystem::path &source_path, const std::filesystem::path &dest_path, Signer &signer);
+        ByteBuffer sign_to_buffer(const std::string &format, std::istream &source, std::iostream &dest);
+        ByteBuffer sign_to_buffer(const std::filesystem::path &source_path, const std::filesystem::path &dest_path);
+
         /// @brief Create a Builder from an archived Builder stream.
         /// @param archive The input stream to read the archive from.
         /// @return A new Builder instance loaded from the archive.
@@ -1376,42 +1462,6 @@ namespace c2pa
         /// @throws C2paException for errors encountered by the C2PA library.
         void add_ingredient_from_archive(std::istream &archive);
 
-        /// @brief Create a hashed placeholder from the builder.
-        /// @param reserved_size The size required for a signature from the intended signer (in bytes).
-        /// @param format The mime format or extension of the asset.
-        /// @return A vector containing the hashed placeholder bytes.
-        /// @throws C2paException for errors encountered by the C2PA library.
-        /// @deprecated Use needs_placeholder() and placeholder(format), with the signer configured
-        ///             on the Builder's Context. Will be removed when c2pa-c moves to c2pa-rs 0.92.0.
-        [[deprecated("Use needs_placeholder() and placeholder(format), with the signer configured "
-                     "on the Builder's Context. Will be removed when c2pa-c moves to c2pa-rs 0.92.0.")]]
-        std::vector<unsigned char> data_hashed_placeholder(uintptr_t reserved_size, const std::string &format);
-
-        /// @brief Sign a Builder using the specified signer and data hash.
-        /// @param signer The signer to use for signing.
-        /// @param data_hash The data hash ranges to sign (must contain hashes unless an asset is provided).
-        /// @param format The mime format for embedding. Use "c2pa" for an unformatted result.
-        /// @param asset Optional asset to hash according to the data_hash information.
-        /// @return A vector containing the signed embeddable data.
-        /// @throws C2paException for errors encountered by the C2PA library.
-        /// @deprecated Use set_data_hash_exclusions(), update_hash_from_stream(), then
-        ///             sign_embeddable(format); the signer comes from the Builder's Context.
-        ///             Will be removed when c2pa-c moves to c2pa-rs 0.92.0.
-        [[deprecated("Use set_data_hash_exclusions(), update_hash_from_stream(), then sign_embeddable(format); "
-                     "the signer comes from the Builder's Context. "
-                     "Will be removed when c2pa-c moves to c2pa-rs 0.92.0.")]]
-        std::vector<unsigned char> sign_data_hashed_embeddable(Signer &signer, const std::string &data_hash, const std::string &format, std::istream *asset = nullptr);
-
-        /// @brief Convert unformatted manifest data to an embeddable format.
-        /// @param format The format for embedding.
-        /// @param data Unformatted manifest data from sign_data_hashed_embeddable using "c2pa" format.
-        /// @return A formatted copy of the data.
-        /// @deprecated Use sign_embeddable(format), which returns manifest bytes already formatted
-        ///             for embedding. Will be removed when c2pa-c moves to c2pa-rs 0.92.0.
-        [[deprecated("Use sign_embeddable(format), which returns manifest bytes already formatted "
-                     "for embedding. Will be removed when c2pa-c moves to c2pa-rs 0.92.0.")]]
-        static std::vector<unsigned char> format_embeddable(const std::string &format, std::vector<unsigned char> &data);
-
         /// @brief Check if the given format requires a placeholder embedding step.
         /// @details Returns false for BoxHash-capable formats when prefer_box_hash is enabled in
         ///          the context settings (no placeholder needed — hash covers the full asset).
@@ -1432,6 +1482,8 @@ namespace c2pa
         /// @return Composed placeholder bytes ready to embed into the asset.
         /// @throws C2paException on error.
         std::vector<unsigned char> placeholder(const std::string &format);
+        /// Zero-copy sibling of placeholder(); same workflow and errors.
+        ByteBuffer placeholder_to_buffer(const std::string &format);
 
         /// @brief Register the byte ranges where the placeholder was embedded (DataHash workflow).
         /// @details Call this after embedding the placeholder bytes into the asset and before
@@ -1464,6 +1516,8 @@ namespace c2pa
         /// @return Signed manifest bytes ready to embed into the asset.
         /// @throws C2paException on error.
         std::vector<unsigned char> sign_embeddable(const std::string &format);
+        /// Zero-copy sibling of sign_embeddable(); same workflow and errors.
+        ByteBuffer sign_embeddable_to_buffer(const std::string &format);
 
         /// @brief Get a list of mime types that the Builder supports.
         /// @return Vector of supported MIME type strings.

@@ -165,7 +165,7 @@ auto context = c2pa::Context::ContextBuilder()
 | `with_signer(signer)` | Store a `Signer` in the context (consumed; used by `Builder::sign` with no explicit signer) |
 | `with_progress_callback(callback)` | Register a progress/cancel callback (see [Progress callbacks and cancellation](#progress-callbacks-and-cancellation)) |
 | `create_context()` | Build and return the `Context` (consumes the builder) |
-| `release()` | Release the raw `C2paContextBuilder*` together with its progress-callback heap owner (see also [Releasing to a custom IContextProvider](#releasing-to-a-custom-icontextprovider)) |
+| `release()` | Release the raw `C2paContextBuilder*` together with its progress and in-place signer callback owners (see also [Releasing to a custom IContextProvider](#releasing-to-a-custom-icontextprovider)) |
 
 ## Progress callbacks and cancellation
 
@@ -883,7 +883,7 @@ c2pa::Context context(R"({
 
 ## Migrating from deprecated APIs
 
-The SDK introduced Context-based APIs to replace constructors and functions that relied on thread-local state. The older APIs still compile but produce deprecation warnings. This section covers each deprecation that involves passing a `Context`, and explains the `Builder::sign` overloads.
+The SDK introduced Context-based APIs to replace constructors and functions that relied on thread-local state. `load_settings` has been removed; the older Reader and Builder constructors remain deprecated and now use default Contexts. This section covers migration to an explicit `Context`, and explains the `Builder::sign` overloads.
 
 ### Quick reference
 
@@ -898,7 +898,7 @@ The SDK introduced Context-based APIs to replace constructors and functions that
 
 ### Replacing load_settings
 
-`c2pa::load_settings(data, format)` sets thread-local settings that `Reader` and `Builder` pick up implicitly. Replace it with a `Context` that you pass explicitly.
+The removed `c2pa::load_settings(data, format)` function set thread-local settings that `Reader` and `Builder` picked up implicitly. Replace it with a `Context` that you pass explicitly.
 
 | Aspect | load_settings (legacy) | Context |
 |--------|------------------------|---------|
@@ -986,14 +986,28 @@ External libraries can implement `IContextProvider` to supply their own context 
 
 #### Releasing to a custom IContextProvider
 
-`Context::ContextBuilder::release()` hands off both the native `C2paContextBuilder*` and the heap-owned progress callback (if any) to the caller. It is the entry point when application code needs to build the native context directly or adopt it into a custom `IContextProvider` implementation.
+`Context::ContextBuilder::release()` hands off the native `C2paContextBuilder*`
+and both heap-owned callbacks (if any) to the caller. It is the entry point
+when application code needs to build the native context directly or adopt it
+into a custom `IContextProvider` implementation.
 
-`ReleasedBuilder` exposes two fields:
+`ReleasedBuilder` exposes three fields:
 
 - `builder`: the raw `C2paContextBuilder*`. It must be passed to `c2pa_context_builder_build` exactly once.
 - `callback_owner`: `std::unique_ptr<c2pa::ProgressCallbackFunc>`; `nullptr` when no progress callback was set. When non-null, it must remain alive at least as long as the native context built from `builder`. If it is destroyed earlier, the library will dereference freed memory on the next progress tick.
+- `signer_callback_owner`: `std::unique_ptr<c2pa::SignerIntoFunc>`; `nullptr`
+  unless an in-place callback signer was set. Keep it alive until all native
+  objects using the signer, including contexts and derived Builders, are
+  freed. Free native objects before destroying either callback owner.
 
-When the built-in `Context` is sufficient, `create_context()` is preferred. It performs the same handoff internally and keeps the native handle and callback owner bound together.
+To adopt the result into the built-in Context, pass both owners to
+`Context(native_context, std::move(released.callback_owner),
+std::move(released.signer_callback_owner))` after successfully building the
+native context. Do not drop the third field when adapting an older provider.
+
+When the built-in `Context` is sufficient, `create_context()` is preferred. It
+performs the same handoff internally and keeps the native handle and both
+callback owners bound together.
 
 ### Builder::sign overloads
 

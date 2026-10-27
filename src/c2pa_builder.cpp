@@ -90,11 +90,8 @@ namespace c2pa
     Builder::Builder(const std::string &manifest_json)
         : builder(nullptr)
     {
-        builder = c2pa_builder_from_json(manifest_json.c_str());
-        if (builder == nullptr)
-        {
-            throw C2paException();
-        }
+        Context context;
+        init_from_context(context, manifest_json);
     }
 
     /// @brief Create a Builder from an archive.
@@ -222,6 +219,31 @@ namespace c2pa
 
     std::vector<unsigned char> Builder::sign(const std::string &format, std::istream &source, std::ostream &dest, Signer &signer)
     {
+        return sign_to_buffer(format, source, dest, signer).to_vector();
+    }
+
+    std::vector<unsigned char> Builder::sign(const std::string &format, std::istream &source, std::iostream &dest, Signer &signer)
+    {
+        return sign_to_buffer(format, source, dest, signer).to_vector();
+    }
+
+    std::vector<unsigned char> Builder::sign(const std::filesystem::path &source_path, const std::filesystem::path &dest_path, Signer &signer)
+    {
+        return sign_to_buffer(source_path, dest_path, signer).to_vector();
+    }
+
+    std::vector<unsigned char> Builder::sign(const std::string &format, std::istream &source, std::iostream &dest)
+    {
+        return sign_to_buffer(format, source, dest).to_vector();
+    }
+
+    std::vector<unsigned char> Builder::sign(const std::filesystem::path &source_path, const std::filesystem::path &dest_path)
+    {
+        return sign_to_buffer(source_path, dest_path).to_vector();
+    }
+
+    ByteBuffer Builder::sign_to_buffer(const std::string &format, std::istream &source, std::ostream &dest, Signer &signer)
+    {
         const std::string normalized_format = detail::normalize_format(format);
 
         // Caller's source/dest streams must outlive this call
@@ -232,10 +254,10 @@ namespace c2pa
 
         // c2pa_builder_sign() uses streams synchronously and completes before returning
         auto result = c2pa_builder_sign(builder, normalized_format.c_str(), c_source.c_stream, c_dest.c_stream, signer.c2pa_signer(), &c2pa_manifest_bytes);
-        return detail::to_byte_vector(c2pa_manifest_bytes, result);
+        return detail::to_byte_buffer(c2pa_manifest_bytes, result);
     }
 
-    std::vector<unsigned char> Builder::sign(const std::string &format, std::istream &source, std::iostream &dest, Signer &signer)
+    ByteBuffer Builder::sign_to_buffer(const std::string &format, std::istream &source, std::iostream &dest, Signer &signer)
     {
         const std::string normalized_format = detail::normalize_format(format);
 
@@ -247,7 +269,7 @@ namespace c2pa
 
         // c2pa_builder_sign() uses streams synchronously and completes before returning
         auto result = c2pa_builder_sign(builder, normalized_format.c_str(), c_source.c_stream, c_dest.c_stream, signer.c2pa_signer(), &c2pa_manifest_bytes);
-        return detail::to_byte_vector(c2pa_manifest_bytes, result);
+        return detail::to_byte_buffer(c2pa_manifest_bytes, result);
     }
 
     /// @brief Sign a file and write the signed data to an output file.
@@ -256,7 +278,7 @@ namespace c2pa
     /// @param signer A signer object to use when signing.
     /// @return A vector containing the signed manifest bytes.
     /// @throws C2pa::C2paException for errors encountered by the C2PA library.
-    std::vector<unsigned char> Builder::sign(const std::filesystem::path &source_path, const std::filesystem::path &dest_path, Signer &signer)
+    ByteBuffer Builder::sign_to_buffer(const std::filesystem::path &source_path, const std::filesystem::path &dest_path, Signer &signer)
     {
         const std::string format =
             detail::resolve_format(detail::extract_file_extension(dest_path));
@@ -277,11 +299,11 @@ namespace c2pa
         {
             throw std::runtime_error("Failed to open destination file: " + dest_path.string());
         }
-        auto result = sign(format, *source, dest, signer);
+        auto result = sign_to_buffer(format, *source, dest, signer);
         return result;
     }
 
-    std::vector<unsigned char> Builder::sign(const std::string &format, std::istream &source, std::iostream &dest)
+    ByteBuffer Builder::sign_to_buffer(const std::string &format, std::istream &source, std::iostream &dest)
     {
         const std::string normalized_format = detail::normalize_format(format);
 
@@ -290,10 +312,10 @@ namespace c2pa
         const unsigned char *c2pa_manifest_bytes = nullptr;
 
         auto result = c2pa_builder_sign_context(builder, normalized_format.c_str(), c_source.c_stream, c_dest.c_stream, &c2pa_manifest_bytes);
-        return detail::to_byte_vector(c2pa_manifest_bytes, result);
+        return detail::to_byte_buffer(c2pa_manifest_bytes, result);
     }
 
-    std::vector<unsigned char> Builder::sign(const std::filesystem::path &source_path, const std::filesystem::path &dest_path)
+    ByteBuffer Builder::sign_to_buffer(const std::filesystem::path &source_path, const std::filesystem::path &dest_path)
     {
         const std::string format =
             detail::resolve_format(detail::extract_file_extension(dest_path));
@@ -313,7 +335,7 @@ namespace c2pa
         {
             throw std::runtime_error("Failed to open destination file: " + dest_path.string());
         }
-        auto result = sign(format, *source, dest);
+        auto result = sign_to_buffer(format, *source, dest);
         return result;
     }
 
@@ -394,33 +416,6 @@ namespace c2pa
         }
     }
 
-    std::vector<unsigned char> Builder::data_hashed_placeholder(uintptr_t reserve_size, const std::string &format)
-    {
-        const std::string normalized_format = detail::normalize_format(format);
-
-        const unsigned char *c2pa_manifest_bytes = nullptr;
-        auto result = c2pa_builder_data_hashed_placeholder(builder, reserve_size, normalized_format.c_str(), &c2pa_manifest_bytes);
-        return detail::to_byte_vector(c2pa_manifest_bytes, result);
-    }
-
-    std::vector<unsigned char> Builder::sign_data_hashed_embeddable(Signer &signer, const std::string &data_hash, const std::string &format, std::istream *asset)
-    {
-        const std::string normalized_format = detail::normalize_format(format);
-
-        int64_t result;
-        const unsigned char *c2pa_manifest_bytes = nullptr;
-        if (asset)
-        {
-            CppIStream c_asset(*asset);
-            result = c2pa_builder_sign_data_hashed_embeddable(builder, signer.c2pa_signer(), data_hash.c_str(), normalized_format.c_str(), c_asset.c_stream, &c2pa_manifest_bytes);
-        }
-        else
-        {
-            result = c2pa_builder_sign_data_hashed_embeddable(builder, signer.c2pa_signer(), data_hash.c_str(), normalized_format.c_str(), nullptr, &c2pa_manifest_bytes);
-        }
-        return detail::to_byte_vector(c2pa_manifest_bytes, result);
-    }
-
     bool Builder::needs_placeholder(const std::string &format)
     {
         const std::string resolved_format = detail::resolve_format(format);
@@ -435,12 +430,17 @@ namespace c2pa
 
     std::vector<unsigned char> Builder::placeholder(const std::string &format)
     {
+        return placeholder_to_buffer(format).to_vector();
+    }
+
+    ByteBuffer Builder::placeholder_to_buffer(const std::string &format)
+    {
         // The format selects the hash assertion written into the builder.
         const std::string normalized_format = detail::normalize_format(format);
 
         const unsigned char *c2pa_manifest_bytes = nullptr;
         auto result = c2pa_builder_placeholder(builder, normalized_format.c_str(), &c2pa_manifest_bytes);
-        return detail::to_byte_vector(c2pa_manifest_bytes, result);
+        return detail::to_byte_buffer(c2pa_manifest_bytes, result);
     }
 
     void Builder::set_data_hash_exclusions(const std::vector<std::pair<uint64_t, uint64_t>> &exclusions)
@@ -475,20 +475,16 @@ namespace c2pa
 
     std::vector<unsigned char> Builder::sign_embeddable(const std::string &format)
     {
-        const std::string normalized_format = detail::normalize_format(format);
-
-        const unsigned char *c2pa_manifest_bytes = nullptr;
-        auto result = c2pa_builder_sign_embeddable(builder, normalized_format.c_str(), &c2pa_manifest_bytes);
-        return detail::to_byte_vector(c2pa_manifest_bytes, result);
+        return sign_embeddable_to_buffer(format).to_vector();
     }
 
-    std::vector<unsigned char> Builder::format_embeddable(const std::string &format, std::vector<unsigned char> &data)
+    ByteBuffer Builder::sign_embeddable_to_buffer(const std::string &format)
     {
         const std::string normalized_format = detail::normalize_format(format);
 
         const unsigned char *c2pa_manifest_bytes = nullptr;
-        auto result = c2pa_format_embeddable(normalized_format.c_str(), data.data(), data.size(), &c2pa_manifest_bytes);
-        return detail::to_byte_vector(c2pa_manifest_bytes, result);
+        auto result = c2pa_builder_sign_embeddable(builder, normalized_format.c_str(), &c2pa_manifest_bytes);
+        return detail::to_byte_buffer(c2pa_manifest_bytes, result);
     }
 
     std::vector<std::string> Builder::supported_mime_types() {

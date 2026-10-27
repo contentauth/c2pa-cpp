@@ -49,18 +49,4 @@ namespace c2pa
         return detail::c_string_to_string(c2pa_version());
     }
 
-    /// Loads C2PA settings from a std::string in a given format.
-    /// @param data the std::string to load.
-    /// @param format the mime format of the string.
-    /// @throws a C2pa::C2paException for errors encountered by the C2PA library.
-    [[deprecated("Use Context(json), Context(settings), or Context::ContextBuilder instead. Will be removed when c2pa-c moves to c2pa-rs 0.92.0.")]]
-    void load_settings(const std::string &data, const std::string &format)
-    {
-        auto result = c2pa_load_settings(data.c_str(), format.c_str());
-        if (result != 0)
-        {
-            throw c2pa::C2paException();
-        }
-    }
-
 } // namespace c2pa
