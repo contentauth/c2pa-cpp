@@ -27,6 +27,7 @@
 #include <string_view>
 #include <vector>
 #include <memory>
+#include <limits>
 
 #include "c2pa.h"
 #include "c2pa.hpp"
@@ -295,17 +296,17 @@ inline std::string c_string_to_string(T* c_result) {
     return str;
 }
 
-/// @brief Convert C byte array result to C++ vector
+/// @brief Adopt a C byte-array result without copying.
 /// @param data Raw byte array from C API
 /// @param size Size of the byte array (result from C API call)
-/// @return Vector containing the bytes (throws if null or negative size)
-/// @details This helper extracts the pattern of checking C API results,
-///          copying to a vector, and freeing the C-allocated memory.
+/// @return Owning buffer (throws on invalid pointer/size combinations).
+/// @details Validation failures release any returned allocation.
 ///          The C API contract is: if result < 0, the operation failed. A null
 ///          data pointer with size == 0 is a valid empty result (the C API
 ///          returns null for empty byte arrays).
-inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int64_t size) {
-    if (size < 0 || (data == nullptr && size > 0)) {
+inline ByteBuffer to_byte_buffer(const unsigned char* data, int64_t size) {
+    if (size < 0 || (data == nullptr && size > 0) ||
+        static_cast<uint64_t>(size) > std::numeric_limits<size_t>::max()) {
         c2pa_free(data);  // May be null or allocated, c2pa_free handles both
         throw C2paException();
     }
@@ -314,9 +315,32 @@ inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int6
         return {};
     }
 
-    auto result = std::vector<unsigned char>(data, data + size);
-    c2pa_free(data);
-    return result;
+    return ByteBuffer(data, static_cast<size_t>(size));
+}
+
+inline std::vector<unsigned char> to_byte_vector(const unsigned char* data, int64_t size) {
+    return to_byte_buffer(data, size).to_vector();
+}
+
+inline intptr_t signer_into_passthrough(const void* context, const unsigned char* data,
+                                       uintptr_t len, unsigned char* signature,
+                                       uintptr_t capacity) noexcept {
+    if (!context || !data || !signature) {
+        return stream_error_return(StreamError::InvalidArgument);
+    }
+    try {
+        const auto& callback = *static_cast<const SignerIntoFunc*>(context);
+        const auto written = callback({data, len}, {signature, capacity});
+        if (written < 0) {
+            return stream_error_return(StreamError::IoError);
+        }
+        if (static_cast<uintptr_t>(written) > capacity) {
+            return stream_error_return(StreamError::NoBufferSpace);
+        }
+        return written;
+    } catch (...) {
+        return stream_error_return(StreamError::IoError);
+    }
 }
 
 } // namespace detail

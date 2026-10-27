@@ -6,6 +6,68 @@ To use this library, include the header file in your code as follows:
 #include "c2pa.hpp"
 ```
 
+## Native byte buffers without a copy
+
+Every `Builder::sign` overload has a `sign_to_buffer` sibling with the same
+arguments. `placeholder_to_buffer(format)` and
+`sign_embeddable_to_buffer(format)` similarly mirror the embeddable APIs.
+These return a move-only `c2pa::ByteBuffer` that owns the native allocation
+without copying it into a C++ vector:
+
+```cpp
+c2pa::ByteBuffer manifest = builder.sign_to_buffer("image/jpeg", source, dest);
+c2pa::ConstBytes view = manifest.view();
+// Consume view.data[0..view.size) while manifest owns the allocation.
+auto copied = manifest.to_vector();  // Explicit, optional copy.
+```
+
+`data()`, `size()`, `empty()`, `begin()`, and `end()` provide read-only access.
+Moving a buffer preserves its allocation address and empties the source.
+Destruction or move-assignment over the owner invalidates its views and frees
+the allocation exactly once with `c2pa_free`. Do not modify, `free`, `realloc`,
+or call `c2pa_free` on `data()` yourself. The buffer may outlive its Builder.
+An empty buffer may have a null `data()` pointer; do not dereference it.
+Existing vector-returning methods keep their signatures and make an explicit
+copy from the same owning buffer internally.
+
+## In-place signing callbacks
+
+The `Signer(SignerIntoFunc, alg, certs, tsa_uri)` overload accepts capturing
+callables. Its `ConstBytes` input views the native payload and its
+`MutableBytes` output views the native signature destination. An application's
+crypto or HSM backend can write directly into that destination, eliminating
+the vector-based callback's input and output copies.
+
+The callable must write no more than `signature.size` bytes, return the actual
+number written, or return a negative value on failure. The wrapper rejects
+oversized counts and converts exceptions to an I/O error before returning to
+the C API. A short or invalid cryptographic signature fails signing; returning
+a small count is not a way to truncate a signature. Never retain either view
+after the callback returns. Captured state must be safe for concurrent calls.
+
+The callable is heap-owned at a stable address across Signer moves. Passing
+the signer to `ContextBuilder::with_signer` transfers the callable along with
+the native signer to the resulting Context. Prefer a `shared_ptr<Context>`
+when constructing Builders so that their callback owner remains alive.
+Custom providers using `ContextBuilder::release()` must keep its
+`signer_callback_owner` alive until every native object using that signer is
+freed; see [Context ownership](context-settings.md#releasing-to-a-custom-icontextprovider).
+The existing vector-based `SignerFunc` constructor remains available.
+
+## Stream and HTTP callback ownership
+
+`CppIStream`, `CppOStream`, and `CppIOStream` pass the native callback's buffer
+directly to the stream's read/write operation. There is no intermediate C++
+payload vector. Custom `std::streambuf` implementations receive those same
+pointers in `xsgetn`/`xsputn`; any buffering performed inside a streambuf is
+outside this adapter guarantee. The caller's streams must outlive the native
+operation, and callback buffers must not be retained.
+
+An HTTP resolver response body must still be allocated with `malloc`.
+The native library reads directly from it without an intermediate body copy,
+then calls `free` when the response is dropped, including error paths. After
+returning the response, the resolver must not reuse or release its body.
+
 ## Read and validate an istream
 
 Use the `Reader` constructor to read C2PA data from a stream. This constructor examines the specified stream for C2PA data in the given format, and its return value is a `Reader` that you can use to extract more information. The constructor throws exceptions on errors.

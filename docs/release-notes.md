@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Zero-copy C++ APIs
+
+- Added move-only `ByteBuffer`, read-only and mutable byte views, and
+  `sign_to_buffer` siblings for all five signing overloads, plus
+  `placeholder_to_buffer` and `sign_embeddable_to_buffer`. Existing vector
+  APIs retain their signatures and copy explicitly through the owning buffer.
+- Added capturing `SignerIntoFunc` callbacks that borrow native input/output
+  buffers directly. Heap-owned callback state survives moves and transfers
+  into Contexts; `ReleasedBuilder` now carries a `signer_callback_owner`
+  field that custom providers must retain. See [usage and ownership](usage.md).
+- Documented direct stream-buffer forwarding and deferred native release of
+  HTTP response bodies.
+
 ### Breaking changes
 
 - Removed deprecated `Builder::data_hashed_placeholder`,
