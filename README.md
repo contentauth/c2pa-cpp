@@ -177,7 +177,7 @@ ctest --test-dir build/debug --output-on-failure
 
 The [API documentation](https://contentauth.github.io/c2pa-cpp/) is built with
 Doxygen from selected published releases. Use the version selector to switch
-releases. The first tag in [api-docs/versions.json](api-docs/versions.json) is
+releases. The first tag in `api-docs/versions.json` is
 the default at the existing root URL; each release is also available at
 `https://contentauth.github.io/c2pa-cpp/versions/<tag>/`.
 
@@ -219,7 +219,7 @@ reads that tag's headers, C sources, and README without running release code.
 It uses the current branch's Doxygen configuration and styling.
 
 To publish documentation for another release, add its tag to
-[api-docs/versions.json](api-docs/versions.json), putting the desired default
+`api-docs/versions.json`, putting the desired default
 first. Publishing a release rebuilds the configured versions but does not
 automatically add it to this list. Pushes to `main` and manual workflow runs
 also rebuild and deploy the site.
