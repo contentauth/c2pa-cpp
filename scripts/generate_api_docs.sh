@@ -10,9 +10,8 @@ if ! command -v doxygen >/dev/null 2>&1; then
 fi
 
 OUT_DIR="api-docs/_build/html"
-rm -rf "api-docs/_build" || true
+rm -rf "$OUT_DIR" "api-docs/_build/xml"
 
 doxygen Doxyfile | cat
 
 echo "Doxygen HTML docs: $OUT_DIR/index.html"
-

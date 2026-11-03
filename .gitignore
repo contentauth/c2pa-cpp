@@ -13,6 +13,7 @@ compile_commands.json
 
 # Doxygen docs
 /api-docs/_build
+__pycache__/
 
 # Generated files
 /src/c2pa.cpp

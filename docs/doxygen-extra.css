@@ -3,3 +3,8 @@
   display: none;
 }
 
+.docs-version-selector {
+  display: block;
+  margin: 0.5em 0;
+  font-size: 14px;
+}

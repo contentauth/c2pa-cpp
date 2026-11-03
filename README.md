@@ -175,13 +175,17 @@ ctest --test-dir build/debug --output-on-failure
 
 ### Building API documentation
 
-Doxygen automatically builds API documentation on each PR.
+The [API documentation](https://contentauth.github.io/c2pa-cpp/) is built with
+Doxygen from selected published releases. Use the version selector to switch
+releases. The first tag in `api-docs/versions.json` is
+the default at the existing root URL; each release is also available at
+`https://contentauth.github.io/c2pa-cpp/versions/<tag>/`.
 
 To generate API docs locally, these are the main files:
 
 - Configuration file: `c2pa-cpp/Doxyfile`
 - Script: `c2pa-cpp/scripts/generate_api_docs.sh`
-- Output directory: `docs/_build/html`
+- Output directory: `api-docs/_build/html`
 
 Install Doxygen if needed:
 
@@ -196,9 +200,39 @@ To generate docs, enter the command:
 ./scripts/generate_api_docs.sh
 ```
 
-Or run `make -C docs`.
+Open `api-docs/_build/html/index.html` to see the working-tree documentation.
+This local build does not include a version selector.
 
-Open `_build/html/index.html` to see the results.
+To build the versioned site, install Python 3.10 or newer and the
+[GitHub CLI](https://cli.github.com/), authenticate with `gh auth login` (or
+set `GH_TOKEN`), and ensure the selected release tags are available locally
+with `git fetch --tags`. Then run:
+
+```sh
+python3 scripts/generate_versioned_api_docs.py
+```
+
+Open `api-docs/_build/versioned/index.html` to see the default release.
+Version-specific pages are under `api-docs/_build/versioned/versions/<tag>/`.
+The build verifies that each configured tag has a published GitHub release and
+reads that tag's headers, C sources, and README without running release code.
+It uses the current branch's Doxygen configuration and styling.
+
+To publish documentation for another release, add its tag to
+`api-docs/versions.json`, putting the desired default
+first. Publishing a release rebuilds the configured versions but does not
+automatically add it to this list. Pushes to `main` and manual workflow runs
+also rebuild and deploy the site.
+
+Run the documentation tooling tests with:
+
+```sh
+python3 -m unittest discover -s tests -p 'test_versioned_docs.py'
+node --test tests/test_version_selector.js
+```
+
+The selector tests require Node.js 18 or newer. CI runs these tests and builds
+the versioned documentation on pull requests.
 
 ## License
 

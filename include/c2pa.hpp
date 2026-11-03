@@ -844,16 +844,20 @@ namespace c2pa
         /// @param format The mime format of the stream.
         /// @param stream The input stream to read from.
         /// @throws C2paException for errors encountered by the C2PA library.
-        /// @deprecated Use Reader(IContextProvider& context, format, stream) instead.
-        [[deprecated("Use Reader(IContextProvider& context, format, stream) instead")]]
+        /// @deprecated Use Reader(std::shared_ptr<IContextProvider>, format, stream) instead.
+        ///             Will be removed when c2pa-c moves to c2pa-rs 0.92.0.
+        [[deprecated("Use Reader(std::shared_ptr<IContextProvider>, format, stream) instead. "
+                     "Will be removed when c2pa-c moves to c2pa-rs 0.92.0.")]]
         Reader(const std::string &format, std::istream &stream);
 
         /// @brief Create a Reader from a file path using a new default Context.
         /// @param source_path The path to the file to read.
         /// @throws C2paException for errors encountered by the C2PA library.
-        /// @deprecated Use Reader(IContextProvider& context, source_path) instead.
+        /// @deprecated Use Reader(std::shared_ptr<IContextProvider>, source_path) instead.
+        ///             Will be removed when c2pa-c moves to c2pa-rs 0.92.0.
         /// @note Prefer using the streaming APIs if possible.
-        [[deprecated("Use Reader(IContextProvider& context, source_path) instead")]]
+        [[deprecated("Use Reader(std::shared_ptr<IContextProvider>, source_path) instead. "
+                     "Will be removed when c2pa-c moves to c2pa-rs 0.92.0.")]]
         Reader(const std::filesystem::path &source_path);
 
         /// @brief Try to open a Reader from a context and file path when the asset may lack C2PA data.
@@ -1167,8 +1171,10 @@ namespace c2pa
         /// @brief Create a Builder from a manifest JSON string using a new default Context.
         /// @param manifest_json The manifest JSON string.
         /// @throws C2paException for errors encountered by the C2PA library.
-        /// @deprecated Use Builder(IContextProvider& context, manifest_json) instead.
-        [[deprecated("Use Builder(IContextProvider& context, manifest_json) instead")]]
+        /// @deprecated Use Builder(std::shared_ptr<IContextProvider>, manifest_json) instead.
+        ///             Will be removed when c2pa-c moves to c2pa-rs 0.92.0.
+        [[deprecated("Use Builder(std::shared_ptr<IContextProvider>, manifest_json) instead. "
+                     "Will be removed when c2pa-c moves to c2pa-rs 0.92.0.")]]
         Builder(const std::string &manifest_json);
 
         /// @brief Create a Builder from a raw C FFI builder.
@@ -1364,6 +1370,10 @@ namespace c2pa
         /// @param format The format for embedding.
         /// @param data Unformatted manifest data in "application/c2pa" format.
         /// @return A formatted copy of the data.
+        /// @deprecated Use sign_embeddable(format), which returns manifest bytes already formatted
+        ///             for embedding. Will be removed when c2pa-c moves to c2pa-rs 0.92.0.
+        [[deprecated("Use sign_embeddable(format), which returns manifest bytes already formatted "
+                     "for embedding. Will be removed when c2pa-c moves to c2pa-rs 0.92.0.")]]
         static std::vector<unsigned char> format_embeddable(const std::string &format, std::vector<unsigned char> &data);
 
         /// @brief Check if the given format requires a placeholder embedding step.

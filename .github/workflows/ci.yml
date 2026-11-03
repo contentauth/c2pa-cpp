@@ -14,6 +14,36 @@ on:
       - main
 
 jobs:
+  docs:
+    name: Versioned API documentation
+    permissions:
+      contents: read
+    if: |
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.author_association == 'COLLABORATOR' ||
+      github.event.pull_request.author_association == 'MEMBER' ||
+      github.event.pull_request.user.login == 'dependabot[bot]' ||
+      contains(github.event.pull_request.labels.*.name, 'safe to test')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: tree:0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install Doxygen
+        run: sudo apt-get install doxygen
+      - name: Test documentation tooling
+        run: |
+          python3 -m unittest discover -s tests -p 'test_versioned_docs.py'
+          node --test tests/test_version_selector.js
+      - name: Build versioned documentation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/generate_versioned_api_docs.py
+
   tests:
     name: Unit tests
 
