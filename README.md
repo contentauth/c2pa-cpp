@@ -78,6 +78,14 @@ The Makefile has a number of other targets; for example:
 
 Results are saved in the `build` directory.
 
+### Downloading prebuilt binaries through a mirror
+
+By default the prebuilt `c2pa_c` libraries are downloaded from the [c2pa-rs GitHub releases](https://github.com/contentauth/c2pa-rs/releases). To use a mirror instead, set `C2PA_PREBUILT_BASE_URL` to the mirror's equivalent of `https://github.com/contentauth/c2pa-rs/releases/download`:
+
+```sh
+cmake -S . -B build -DC2PA_PREBUILT_BASE_URL=https://mirror.example.com/github/contentauth/c2pa-rs/releases/download
+```
+
 ### Building using local sources
 
 This project can also be built entirely from source (without pre-built library download), with the prerequisite that you will also need [c2pa-rs](https://github.com/contentauth/c2pa-rs) on the local machine, as well as the [Rust toolchain](https://rust-lang.org/tools/install/).
