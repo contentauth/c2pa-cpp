@@ -65,18 +65,33 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Checkout c2pa-rs (main)
+        uses: actions/checkout@v4
+        with:
+          repository: contentauth/c2pa-rs
+          ref: main
+          path: c2pa-rs
+
+      - name: Configure c2pa-rs main source build
+        shell: bash
+        run: |
+          git -C c2pa-rs log -1 --format='c2pa-rs main: %H %s'
+          cargo --version
+          rustc --version
+          echo "C2PA_BUILD_FROM_SOURCE=ON" >> "$GITHUB_ENV"
+          echo "C2PA_RS_PATH=${GITHUB_WORKSPACE//\\//}/c2pa-rs" >> "$GITHUB_ENV"
+
       - name: Check cmake
         run: cmake --version
 
       - name: Check Ninja
         run: ninja --version
 
-      - name: Configure
-        run: cmake -S . -B build -G Ninja
-
       - name: Setup MSVC toolchain on Windows
-        if: matrix.os == 'windows-latest'
+        if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ runner.arch == 'ARM64' && 'arm64' || 'x64' }}
 
       - name: Print make version and path
         run: |

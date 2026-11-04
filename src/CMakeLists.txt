@@ -82,13 +82,22 @@ if(C2PA_BUILD_FROM_SOURCE)
     find_program(CARGO_EXECUTABLE cargo PATHS "$ENV{HOME}/.cargo/bin" REQUIRED)
     message(STATUS "Found cargo at: ${CARGO_EXECUTABLE}")
 
+    set(C2PA_RUST_ARTIFACTS "${C2PA_LIB_NAME}" "c2pa.h")
+    if(WIN32)
+        list(APPEND C2PA_RUST_ARTIFACTS "${C2PA_IMPLIB_NAME}")
+    endif()
+    set(C2PA_RUST_SOURCES ${C2PA_RUST_ARTIFACTS})
+    list(TRANSFORM C2PA_RUST_SOURCES PREPEND "${C2PA_RS_PATH}/target/release/")
+    set(C2PA_RUST_OUTPUTS ${C2PA_RUST_ARTIFACTS})
+    list(TRANSFORM C2PA_RUST_OUTPUTS PREPEND "${C2PA_RUST_BUILD_DIR}/")
+
     # Build the Rust c2pa_c_ffi library
     add_custom_command(
-        OUTPUT "${C2PA_RUST_BUILD_DIR}/${C2PA_LIB_NAME}"
+        OUTPUT ${C2PA_RUST_OUTPUTS}
         COMMAND ${CARGO_EXECUTABLE} build --release --package c2pa-c-ffi --no-default-features --features "rust_native_crypto, file_io, http, add_thumbnails"
-        COMMAND ${CMAKE_COMMAND} -E copy
-            "${C2PA_RS_PATH}/target/release/${C2PA_LIB_NAME}"
-            "${C2PA_RUST_BUILD_DIR}/${C2PA_LIB_NAME}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${C2PA_RUST_SOURCES}
+            "${C2PA_RUST_BUILD_DIR}"
         WORKING_DIRECTORY "${C2PA_RS_PATH}"
         COMMENT "Building c2pa_c from source using Cargo"
         VERBATIM
@@ -96,16 +105,7 @@ if(C2PA_BUILD_FROM_SOURCE)
 
     # Create a custom target that depends on the library
     add_custom_target(build_c2pa_c ALL
-        DEPENDS "${C2PA_RUST_BUILD_DIR}/${C2PA_LIB_NAME}"
-    )
-
-    # Copy the generated c2pa.h header
-    add_custom_command(
-        TARGET build_c2pa_c POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${C2PA_RS_PATH}/target/release/c2pa.h"
-            "${C2PA_RUST_BUILD_DIR}/c2pa.h"
-        COMMENT "Copying c2pa.h header"
+        DEPENDS ${C2PA_RUST_OUTPUTS}
     )
 
     set(C2PA_C_LIB "${C2PA_RUST_BUILD_DIR}/${C2PA_LIB_NAME}")

@@ -135,9 +135,11 @@ if(UNIX AND NOT APPLE)
         COMMAND bash -c "echo '=== RPATH Debug Info ===' && echo 'Working dir:' && pwd && echo 'Library files in tests dir:' && ls -la ${c2pa-c_BINARY_DIR}/tests/ && echo 'RPATH of c2pa_c_tests:' && readelf -d ${c2pa-c_BINARY_DIR}/tests/c2pa_c_tests | grep -E '(RPATH|RUNPATH)' && echo 'RPATH of ctest:' && readelf -d ${c2pa-c_BINARY_DIR}/tests/ctest | grep -E '(RPATH|RUNPATH)' && echo 'ldd output for c2pa_c_tests:' && ldd ${c2pa-c_BINARY_DIR}/tests/c2pa_c_tests"
     )
 
-    add_test(NAME debug_library_location
-        COMMAND bash -c "echo '=== Library Location Debug ===' && echo 'Current dir:' && pwd && echo 'Contents of build/debug:' && ls -la ${CMAKE_BINARY_DIR}/ && echo 'Contents of _deps:' && ls -la ${CMAKE_BINARY_DIR}/_deps/ && echo 'Contents of prebuilt lib:' && ls -la ${CMAKE_BINARY_DIR}/_deps/c2pa_prebuilt-src/lib/"
-    )
+    if(NOT C2PA_BUILD_FROM_SOURCE)
+        add_test(NAME debug_library_location
+            COMMAND bash -c "echo '=== Library Location Debug ===' && echo 'Current dir:' && pwd && echo 'Contents of build/debug:' && ls -la ${CMAKE_BINARY_DIR}/ && echo 'Contents of _deps:' && ls -la ${CMAKE_BINARY_DIR}/_deps/ && echo 'Contents of prebuilt lib:' && ls -la ${CMAKE_BINARY_DIR}/_deps/c2pa_prebuilt-src/lib/"
+        )
+    endif()
 endif()
 
 # For better reliability, especially on Linux, manually add tests instead of auto-discovery
@@ -162,7 +164,7 @@ endif()
 
 if(WIN32)
     # On Windows, link to the import library (.lib file)
-    target_link_libraries(ctest PRIVATE "${C2PA_PREBUILT_INCLUDE_DIR}/../lib/c2pa_c.dll.lib")
+    target_link_libraries(ctest PRIVATE "${C2PA_C_IMPLIB}")
 
     # Add MSVC-specific compile options for C code to handle prebuilt library issues
     if(MSVC)
@@ -196,4 +198,3 @@ setup_c2pa_runtime_deps(ctest)
 add_test(NAME c_test COMMAND ctest)
 # Set platform-specific environment and working directory
 setup_test_environment(c_test "${c2pa-c_SOURCE_DIR}")
-

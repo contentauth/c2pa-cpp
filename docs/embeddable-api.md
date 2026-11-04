@@ -11,6 +11,24 @@ The embeddable signing API provides direct, fine-grained control over embedding 
 4. Sign the claim.
 5. Patch the manifest in place.
 
+## Migrating from the removed data-hashed APIs
+
+On this nightly-compatibility branch, `data_hashed_placeholder(reserve_size, format)`
+and `sign_data_hashed_embeddable(signer, data_hash, format, asset)` have been removed.
+The supported workflow is:
+
+1. Attach the signer to the Context before constructing the Builder.
+2. Call `placeholder(format)` and embed the returned bytes in the asset.
+3. Call `set_data_hash_exclusions()` with the embedded placeholder's byte offset and length.
+4. Call `update_hash_from_stream(format, asset)` to hash the asset.
+5. Call `sign_embeddable(format)` and overwrite the placeholder with its result.
+
+The new workflow obtains the signature reserve size from the Context signer and
+computes the hash from the supplied stream; it does not accept the old precomputed
+DataHash JSON argument. Do not change the asset outside the excluded placeholder
+region after hashing. `format_embeddable(format, data)` remains available for raw
+manifest bytes and now uses the supported `c2pa_builder_compose_manifest` API.
+
 ## Why use the embeddable API
 
 The standard `Builder::sign()` handles the full pipeline internally:

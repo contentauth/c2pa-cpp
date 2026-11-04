@@ -60,7 +60,7 @@ c2pa::Reader reader(context, "image.jpg");
 - **Improves code clarity**: `Builder(context, manifest)` shows configuration is being used
 
 > [!NOTE]
-> The deprecated `c2pa::load_settings(data, format)` still works but you should migrate to `Context`. **Never mix the two approaches**. 
+> `c2pa::load_settings(data, format)` has been removed on this nightly-compatibility branch. Pass settings explicitly through a `Context`.
 > See [Migrating from deprecated APIs](#migrating-from-deprecated-apis).
 
 ### Context lifecycle
@@ -883,11 +883,11 @@ c2pa::Context context(R"({
 
 ## Migrating from deprecated APIs
 
-The SDK introduced Context-based APIs to replace constructors and functions that relied on thread-local state. The older APIs still compile but produce deprecation warnings. This section covers each deprecation that involves passing a `Context`, and explains the `Builder::sign` overloads.
+The SDK introduced Context-based APIs to replace constructors and functions that relied on thread-local state. On this nightly-compatibility branch, `load_settings` has been removed. The context-free `Reader` and `Builder` constructors still compile with deprecation warnings, but create a new default Context rather than reading thread-local settings. This section covers migration to explicit contexts and the `Builder::sign` overloads.
 
 ### Quick reference
 
-| Deprecated API | Replacement |
+| Removed or deprecated API | Replacement |
 |---|---|
 | `load_settings(data, format)` | [`Context` constructors or `ContextBuilder`](#replacing-load_settings) |
 | `Reader(format, stream)` | [`Reader(shared_ptr<IContextProvider>, format, stream)`](#adding-a-context-parameter-to-reader-and-builder) |
@@ -898,7 +898,7 @@ The SDK introduced Context-based APIs to replace constructors and functions that
 
 ### Replacing load_settings
 
-`c2pa::load_settings(data, format)` sets thread-local settings that `Reader` and `Builder` pick up implicitly. Replace it with a `Context` that you pass explicitly.
+The removed `c2pa::load_settings(data, format)` used to set thread-local settings that `Reader` and `Builder` picked up implicitly. Replace it with a `Context` that you pass explicitly.
 
 | Aspect | load_settings (legacy) | Context |
 |--------|------------------------|---------|
@@ -906,7 +906,7 @@ The SDK introduced Context-based APIs to replace constructors and functions that
 | Multiple configs | Awkward (per-thread) | One context per configuration |
 | Testing | Shared global state | Isolated contexts per test |
 
-**Deprecated:** 
+**Removed (old code):**
 
 ```cpp
 std::ifstream config_file("settings.json");
@@ -922,11 +922,11 @@ c2pa::Context context(settings_json_string);  // or Context(Settings(...))
 c2pa::Reader reader(context, "image/jpeg", stream);
 ```
 
-If you still use `load_settings`, construct `Reader` or `Builder` **without** a context parameter to continue using the thread-local settings. Prefer passing a context for new code.
+There is no thread-local settings fallback. Context-free constructors use default settings; pass a context whenever configuration matters.
 
 ### Adding a context parameter to Reader and Builder
 
-The following constructors are deprecated because they rely on thread-local settings:
+The following constructors are deprecated because they do not accept explicit configuration:
 
 - `Reader(const std::string& format, std::istream& stream)`
 - `Reader(const std::filesystem::path& source_path)`
