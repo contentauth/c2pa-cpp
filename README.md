@@ -226,28 +226,19 @@ The build verifies that each configured tag has a published GitHub release and
 reads that tag's headers, C sources, and README without running release code.
 It uses the current branch's Doxygen configuration and styling.
 
-Publishing a stable GitHub release automatically opens a pull request to
-prepend its exact `vX.Y.Z` tag to `api-docs/versions.json`, preserving older
-entries and promoting an existing tag without duplicates. The bot pushes only
-to the release-specific `docs/api-versions-<tag>` branch, never to `main`.
-Review and merge the pull request to deploy the new default version: the merge
-triggers the existing `main` documentation workflow.
+Publishing a stable GitHub release automatically prepends its exact `vX.Y.Z`
+tag to `api-docs/versions.json` on `main`, preserving older entries and
+promoting an existing tag without duplicates. The bot commits this update
+after publication; it does not modify the release tag. The same workflow then
+builds and deploys the updated site, without relying on the bot's push
+triggering another workflow. Prerelease publications rebuild the configured
+versions without changing the version list. Rerunning a release workflow
+does not create an empty commit.
 
-Release publications still rebuild and deploy the versions currently approved
-on `main`. Prereleases do not open version-update pull requests. Reruns update
-the existing release pull request rather than creating duplicates, and do
-nothing if the proposed version list already matches `main`.
-
-The version-update job requires `contents: write` for its proposal branch and
-`pull-requests: write`. Enable **Allow GitHub Actions to create and approve pull
-requests** under repository **Settings > Actions > General > Workflow
-permissions** (subject to organization policy). No permission to bypass
-`main` branch protection is needed, and the workflow never approves or merges
-the pull request. The deployment job retains read-only repository access.
-Pull requests created with the default `GITHUB_TOKEN` do not automatically
-trigger pull-request CI workflows; if required checks need to run automatically,
-configure an appropriately scoped GitHub App token for the pull-request
-action instead.
+The version-update job requires `contents: write`, and branch protection or
+repository rules must allow `github-actions[bot]` to push to `main`. If that
+push fails, deployment is blocked rather than publishing a stale version list.
+The deployment job retains read-only repository access.
 
 To adjust the selected releases manually, edit `api-docs/versions.json`,
 putting the desired default first. Pushes to `main` and manual workflow runs
