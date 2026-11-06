@@ -19,7 +19,50 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  update-versions:
+    if: github.event_name == 'release' && github.event.release.prerelease == false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Update documentation versions
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Expected a stable release tag such as v0.26.14."
+            exit 1
+          fi
+          jq --arg tag "$RELEASE_TAG" \
+            '.versions = [$tag] + (.versions - [$tag])' \
+            api-docs/versions.json > "$RUNNER_TEMP/versions.json"
+          mv "$RUNNER_TEMP/versions.json" api-docs/versions.json
+
+      - name: Open documentation versions pull request
+        uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7
+        with:
+          base: main
+          branch: docs/api-versions-${{ github.event.release.tag_name }}
+          add-paths: api-docs/versions.json
+          author: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
+          commit-message: "docs: update API documentation versions for ${{ github.event.release.tag_name }}"
+          title: "docs: add ${{ github.event.release.tag_name }} to API documentation"
+          body: |
+            Add the published stable release `${{ github.event.release.tag_name }}`
+            as the default API documentation version, preserving older entries.
+
+            Review and merge this pull request to deploy the updated documentation.
+
   deploy:
+    needs: update-versions
+    if: |
+      !cancelled() &&
+      (needs.update-versions.result == 'success' || needs.update-versions.result == 'skipped')
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

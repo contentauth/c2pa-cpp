@@ -226,11 +226,32 @@ The build verifies that each configured tag has a published GitHub release and
 reads that tag's headers, C sources, and README without running release code.
 It uses the current branch's Doxygen configuration and styling.
 
-To publish documentation for another release, add its tag to
-`api-docs/versions.json`, putting the desired default
-first. Publishing a release rebuilds the configured versions but does not
-automatically add it to this list. Pushes to `main` and manual workflow runs
-also rebuild and deploy the site.
+Publishing a stable GitHub release automatically opens a pull request to
+prepend its exact `vX.Y.Z` tag to `api-docs/versions.json`, preserving older
+entries and promoting an existing tag without duplicates. The bot pushes only
+to the release-specific `docs/api-versions-<tag>` branch, never to `main`.
+Review and merge the pull request to deploy the new default version: the merge
+triggers the existing `main` documentation workflow.
+
+Release publications still rebuild and deploy the versions currently approved
+on `main`. Prereleases do not open version-update pull requests. Reruns update
+the existing release pull request rather than creating duplicates, and do
+nothing if the proposed version list already matches `main`.
+
+The version-update job requires `contents: write` for its proposal branch and
+`pull-requests: write`. Enable **Allow GitHub Actions to create and approve pull
+requests** under repository **Settings > Actions > General > Workflow
+permissions** (subject to organization policy). No permission to bypass
+`main` branch protection is needed, and the workflow never approves or merges
+the pull request. The deployment job retains read-only repository access.
+Pull requests created with the default `GITHUB_TOKEN` do not automatically
+trigger pull-request CI workflows; if required checks need to run automatically,
+configure an appropriately scoped GitHub App token for the pull-request
+action instead.
+
+To adjust the selected releases manually, edit `api-docs/versions.json`,
+putting the desired default first. Pushes to `main` and manual workflow runs
+also rebuild and deploy the site without changing the version list.
 
 Run the documentation tooling tests with:
 
