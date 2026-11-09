@@ -75,7 +75,7 @@ jobs:
       - name: Configure c2pa-rs release-candidate source build
         shell: bash
         run: |
-          git -C c2pa-rs log -1 --format='c2pa-rs main: %H %s'
+          git -C c2pa-rs log -1 --format='c2pa-rs checkout: %H %s'
           cargo --version
           rustc --version
           echo "C2PA_BUILD_FROM_SOURCE=ON" >> "$GITHUB_ENV"
