@@ -226,11 +226,23 @@ The build verifies that each configured tag has a published GitHub release and
 reads that tag's headers, C sources, and README without running release code.
 It uses the current branch's Doxygen configuration and styling.
 
-To publish documentation for another release, add its tag to
-`api-docs/versions.json`, putting the desired default
-first. Publishing a release rebuilds the configured versions but does not
-automatically add it to this list. Pushes to `main` and manual workflow runs
-also rebuild and deploy the site.
+Publishing a stable GitHub release automatically prepends its exact `vX.Y.Z`
+tag to `api-docs/versions.json` on `main`, preserving older entries and
+promoting an existing tag without duplicates. The bot commits this update
+after publication; it does not modify the release tag. The same workflow then
+builds and deploys the updated site, without relying on the bot's push
+triggering another workflow. Prerelease publications rebuild the configured
+versions without changing the version list. Rerunning a release workflow
+does not create an empty commit.
+
+The version-update job requires `contents: write`, and branch protection or
+repository rules must allow `github-actions[bot]` to push to `main`. If that
+push fails, deployment is blocked rather than publishing a stale version list.
+The deployment job retains read-only repository access.
+
+To adjust the selected releases manually, edit `api-docs/versions.json`,
+putting the desired default first. Pushes to `main` and manual workflow runs
+also rebuild and deploy the site without changing the version list.
 
 Run the documentation tooling tests with:
 
