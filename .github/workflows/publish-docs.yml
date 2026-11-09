@@ -19,7 +19,43 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  update-versions:
+    if: github.event_name == 'release' && github.event.release.prerelease == false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Update documentation versions
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Expected a stable release tag such as v0.26.14."
+            exit 1
+          fi
+          jq --arg tag "$RELEASE_TAG" \
+            '.versions = [$tag] + (.versions - [$tag])' \
+            api-docs/versions.json > "$RUNNER_TEMP/versions.json"
+          mv "$RUNNER_TEMP/versions.json" api-docs/versions.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add api-docs/versions.json
+          if git diff --cached --quiet; then
+            echo "Documentation versions already include $RELEASE_TAG as the default."
+          else
+            git commit -m "docs: update API documentation versions for $RELEASE_TAG"
+            git push origin HEAD:main
+          fi
+
   deploy:
+    needs: update-versions
+    if: |
+      !cancelled() &&
+      (needs.update-versions.result == 'success' || needs.update-versions.result == 'skipped')
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

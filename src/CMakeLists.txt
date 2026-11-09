@@ -28,6 +28,11 @@ add_definitions(-DC2PA_DLL)
 option(C2PA_BUILD_FROM_SOURCE "Build c2pa_c Rust library from source instead of using prebuilt" OFF)
 set(C2PA_RS_PATH "" CACHE PATH "Path to c2pa-rs repository (required if C2PA_BUILD_FROM_SOURCE is ON)")
 
+# Base URL for the prebuilt c2pa_c release downloads. Override to fetch them through a mirror
+# instead of directly from GitHub.
+set(C2PA_PREBUILT_BASE_URL "https://github.com/contentauth/c2pa-rs/releases/download" CACHE STRING
+    "Base URL for prebuilt c2pa_c release downloads")
+
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
     set(C2PA_PROCESSOR "aarch64")
 else()
@@ -118,7 +123,7 @@ else()
     message(STATUS "Using prebuilt c2pa_c binaries")
 
     set(C2PA_PREBUILT_ZIP "c2pa-v${C2PA_VERSION}-${C2PA_PREBUILT_ARCH}.zip")
-    set(C2PA_PREBUILT_URL "https://github.com/contentauth/c2pa-rs/releases/download/c2pa-v${C2PA_VERSION}/${C2PA_PREBUILT_ZIP}")
+    set(C2PA_PREBUILT_URL "${C2PA_PREBUILT_BASE_URL}/c2pa-v${C2PA_VERSION}/${C2PA_PREBUILT_ZIP}")
 
     message(STATUS "fetching c2pa_prebuilt url: ${C2PA_PREBUILT_URL}")
 
