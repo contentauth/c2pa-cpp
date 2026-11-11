@@ -887,9 +887,12 @@ The SDK introduced Context-based APIs to replace constructors and functions that
 
 ### Quick reference
 
-| Removed or deprecated API | Replacement |
+| Removed API | Replacement |
 |---|---|
 | `load_settings(data, format)` | [`Context` constructors or `ContextBuilder`](#replacing-load_settings) |
+
+| Deprecated API | Replacement |
+|---|---|
 | `Reader(format, stream)` | [`Reader(shared_ptr<IContextProvider>, format, stream)`](#adding-a-context-parameter-to-reader-and-builder) |
 | `Reader(source_path)` | [`Reader(shared_ptr<IContextProvider>, source_path)`](#adding-a-context-parameter-to-reader-and-builder) |
 | `Builder(manifest_json)` | [`Builder(shared_ptr<IContextProvider>, manifest_json)`](#adding-a-context-parameter-to-reader-and-builder) |
