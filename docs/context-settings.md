@@ -60,8 +60,8 @@ c2pa::Reader reader(context, "image.jpg");
 - **Improves code clarity**: `Builder(context, manifest)` shows configuration is being used
 
 > [!NOTE]
-> `c2pa::load_settings(data, format)` has been removed. Pass settings explicitly through a `Context`.
-> See [Migrating from deprecated APIs](#migrating-from-deprecated-apis).
+> Pass settings explicitly through a `Context`. For existing applications, see
+> [Migrating from deprecated APIs](#migrating-from-deprecated-apis).
 
 ### Context lifecycle
 
