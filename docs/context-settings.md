@@ -906,19 +906,10 @@ The removed `c2pa::load_settings(data, format)` used to set thread-local setting
 | Multiple configs | Awkward (per-thread) | One context per configuration |
 | Testing | Shared global state | Isolated contexts per test |
 
-**Removed (old code):**
-
-```cpp
-std::ifstream config_file("settings.json");
-std::string config((std::istreambuf_iterator<char>(config_file)), std::istreambuf_iterator<char>());
-c2pa::load_settings(config, "json");
-c2pa::Reader reader("image/jpeg", stream);  // uses thread-local settings
-```
-
 **With context API:**
 
 ```cpp
-c2pa::Context context(settings_json_string);  // or Context(Settings(...))
+auto context = std::make_shared<c2pa::Context>(settings_json_string);
 c2pa::Reader reader(context, "image/jpeg", stream);
 ```
 
