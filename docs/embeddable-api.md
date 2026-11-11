@@ -13,7 +13,7 @@ The embeddable signing API provides direct, fine-grained control over embedding 
 
 ## Migrating from the removed data-hashed APIs
 
-On this nightly-compatibility branch, `data_hashed_placeholder(reserve_size, format)`
+The methods `data_hashed_placeholder(reserve_size, format)`
 and `sign_data_hashed_embeddable(signer, data_hash, format, asset)` have been removed.
 The supported workflow is:
 

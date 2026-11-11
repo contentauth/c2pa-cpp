@@ -52,7 +52,7 @@ You can set the intent on a `Builder` instance by:
 - [Using Context](#using-context)
 - [Using `set_intent` on the `Builder`](#using-set_intent-on-builder)
 
-The `load_settings()` function has been removed on this nightly-compatibility branch. For existing code, see [Context and Settings - Migrating from deprecated APIs](context-settings.md#migrating-from-deprecated-apis).
+The `load_settings()` function has been removed. For existing code, see [Context and Settings - Migrating from deprecated APIs](context-settings.md#migrating-from-deprecated-apis).
 
 ### Using Context
 

@@ -60,7 +60,7 @@ c2pa::Reader reader(context, "image.jpg");
 - **Improves code clarity**: `Builder(context, manifest)` shows configuration is being used
 
 > [!NOTE]
-> `c2pa::load_settings(data, format)` has been removed on this nightly-compatibility branch. Pass settings explicitly through a `Context`.
+> `c2pa::load_settings(data, format)` has been removed. Pass settings explicitly through a `Context`.
 > See [Migrating from deprecated APIs](#migrating-from-deprecated-apis).
 
 ### Context lifecycle
@@ -883,7 +883,7 @@ c2pa::Context context(R"({
 
 ## Migrating from deprecated APIs
 
-The SDK introduced Context-based APIs to replace constructors and functions that relied on thread-local state. On this nightly-compatibility branch, `load_settings` has been removed. The context-free `Reader` and `Builder` constructors still compile with deprecation warnings, but create a new default Context rather than reading thread-local settings. This section covers migration to explicit contexts and the `Builder::sign` overloads.
+The SDK introduced Context-based APIs to replace constructors and functions that relied on thread-local state. `load_settings` has been removed. The context-free `Reader` and `Builder` constructors still compile with deprecation warnings, but create a new default Context rather than reading thread-local settings. This section covers migration to explicit contexts and the `Builder::sign` overloads.
 
 ### Quick reference
 
