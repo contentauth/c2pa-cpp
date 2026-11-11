@@ -71,19 +71,18 @@ jobs:
       - name: Check Ninja
         run: ninja --version
 
-      - name: Configure
-        run: cmake -S . -B build -G Ninja
-
       - name: Setup MSVC toolchain on Windows
-        if: matrix.os == 'windows-latest'
+        if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ runner.arch == 'ARM64' && 'arm64' || 'x64' }}
 
       - name: Print make version and path
         run: |
           which make
           make --version
 
-      - name: Run tests (debug build)
+      - name: Build and test against c2pa-rs 0.92.0 release
         run: make test
 
       - name: Run tests (debug build, with sanitizers)

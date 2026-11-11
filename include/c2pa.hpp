@@ -533,16 +533,6 @@ namespace c2pa
     /// @return Version string.
     std::string C2PA_CPP_API version();
 
-    /// @brief Load C2PA settings from a string in a given format.
-    /// @param data The configuration data to load.
-    /// @param format The mimetype of the string.
-    /// @throws C2paException for errors encountered by the C2PA library.
-    /// @deprecated Use Context constructors or Context::ContextBuilder instead for better thread safety.
-    ///             Will be removed when c2pa-c moves to c2pa-rs 0.92.0.
-    [[deprecated("Use Context(json), Context(settings), or Context::ContextBuilder instead. "
-                 "Will be removed when c2pa-c moves to c2pa-rs 0.92.0.")]]
-    void C2PA_CPP_API load_settings(const std::string& data, const std::string& format);
-
     /// @defgroup StreamWrappers Stream wrappers for C2PA C API
     /// @brief C++ stream types that adapt stream types to C2paStream.
     ///
@@ -553,14 +543,30 @@ namespace c2pa
     /// - seeker(context, offset, whence): seek to offset (whence = Start/Current/End); return new position or -1 (set errno).
     /// - flusher(context): flush; return 0 on success, -1 on error (set errno).
 
+    /// @brief Common owning base for C++ wrappers of opaque C2paStream handles.
+    /// @details The wrapped C++ stream must outlive this wrapper.
+    class C2PA_CPP_API C2paStream
+    {
+    public:
+        /// @brief Pointer to the underlying C2paStream.
+        ::C2paStream *c_stream = nullptr;
+
+        C2paStream(const C2paStream &) = delete;
+        C2paStream &operator=(const C2paStream &) = delete;
+        C2paStream(C2paStream &&) = delete;
+        C2paStream &operator=(C2paStream &&) = delete;
+
+        virtual ~C2paStream();
+
+    protected:
+        C2paStream() = default;
+    };
+
     /// @brief Input stream IStream wrapper for C2paStream.
     /// @details This class is used to wrap an input stream for use with the C2PA library.
     class C2PA_CPP_API CppIStream : public C2paStream
     {
     public:
-        /// @brief Pointer to the underlying C2paStream.
-        C2paStream *c_stream;
-
         /// @brief Construct an input stream wrapper from a std::istream-derived object.
         /// @tparam IStream Type derived from std::istream.
         /// @param istream The input stream to wrap (must be open and valid).
@@ -584,7 +590,7 @@ namespace c2pa
 
         CppIStream &operator=(CppIStream &&) = delete;
 
-        ~CppIStream();
+        ~CppIStream() override;
 
     private:
         /// @brief Reader callback implementation.
@@ -621,9 +627,6 @@ namespace c2pa
     class C2PA_CPP_API CppOStream : public C2paStream
     {
     public:
-        /// @brief Pointer to the underlying C2paStream.
-        C2paStream *c_stream;
-
         /// @brief Construct an output stream wrapper from a std::ostream-derived object.
         /// @tparam OStream Type derived from std::ostream.
         /// @param ostream The output stream to wrap (must be open and valid).
@@ -646,7 +649,7 @@ namespace c2pa
 
         CppOStream &operator=(CppOStream &&) = delete;
 
-        ~CppOStream();
+        ~CppOStream() override;
 
     private:
         /// @brief Reader callback implementation (not used for output streams).
@@ -681,9 +684,6 @@ namespace c2pa
     class C2PA_CPP_API CppIOStream : public C2paStream
     {
     public:
-        /// @brief Pointer to the underlying C2paStream.
-        C2paStream *c_stream;
-
         /// @brief Construct an I/O stream wrapper from a std::iostream-derived object.
         /// @tparam IOStream Type derived from std::iostream.
         /// @param iostream The I/O stream to wrap (must be open and valid).
@@ -706,7 +706,7 @@ namespace c2pa
 
         CppIOStream &operator=(CppIOStream &&) = delete;
 
-        ~CppIOStream();
+        ~CppIOStream() override;
 
     private:
         /// @brief Reader callback implementation.
@@ -849,7 +849,7 @@ namespace c2pa
                std::istream& image_stream,
                const std::vector<uint8_t>& manifest_jumbf);
 
-        /// @brief Create a Reader from a stream (will use global settings if any loaded).
+        /// @brief Create a Reader from a stream using a new default Context.
         /// @details The validation_status field in the JSON contains validation results.
         /// @param format The mime format of the stream.
         /// @param stream The input stream to read from.
@@ -860,7 +860,7 @@ namespace c2pa
                      "Will be removed when c2pa-c moves to c2pa-rs 0.92.0.")]]
         Reader(const std::string &format, std::istream &stream);
 
-        /// @brief Create a Reader from a file path (will use global settings if any loaded).
+        /// @brief Create a Reader from a file path using a new default Context.
         /// @param source_path The path to the file to read.
         /// @throws C2paException for errors encountered by the C2PA library.
         /// @deprecated Use Reader(std::shared_ptr<IContextProvider>, source_path) instead.
@@ -1178,7 +1178,7 @@ namespace c2pa
         /// @throws C2paException if context is null or context->is_valid() returns false.
         Builder(std::shared_ptr<IContextProvider> context, const std::string &manifest_json);
 
-        /// @brief Create a Builder from a manifest JSON string (will use global settings if any loaded).
+        /// @brief Create a Builder from a manifest JSON string using a new default Context.
         /// @param manifest_json The manifest JSON string.
         /// @throws C2paException for errors encountered by the C2PA library.
         /// @deprecated Use Builder(std::shared_ptr<IContextProvider>, manifest_json) instead.
@@ -1376,35 +1376,9 @@ namespace c2pa
         /// @throws C2paException for errors encountered by the C2PA library.
         void add_ingredient_from_archive(std::istream &archive);
 
-        /// @brief Create a hashed placeholder from the builder.
-        /// @param reserved_size The size required for a signature from the intended signer (in bytes).
-        /// @param format The mime format or extension of the asset.
-        /// @return A vector containing the hashed placeholder bytes.
-        /// @throws C2paException for errors encountered by the C2PA library.
-        /// @deprecated Use needs_placeholder() and placeholder(format), with the signer configured
-        ///             on the Builder's Context. Will be removed when c2pa-c moves to c2pa-rs 0.92.0.
-        [[deprecated("Use needs_placeholder() and placeholder(format), with the signer configured "
-                     "on the Builder's Context. Will be removed when c2pa-c moves to c2pa-rs 0.92.0.")]]
-        std::vector<unsigned char> data_hashed_placeholder(uintptr_t reserved_size, const std::string &format);
-
-        /// @brief Sign a Builder using the specified signer and data hash.
-        /// @param signer The signer to use for signing.
-        /// @param data_hash The data hash ranges to sign (must contain hashes unless an asset is provided).
-        /// @param format The mime format for embedding. Use "c2pa" for an unformatted result.
-        /// @param asset Optional asset to hash according to the data_hash information.
-        /// @return A vector containing the signed embeddable data.
-        /// @throws C2paException for errors encountered by the C2PA library.
-        /// @deprecated Use set_data_hash_exclusions(), update_hash_from_stream(), then
-        ///             sign_embeddable(format); the signer comes from the Builder's Context.
-        ///             Will be removed when c2pa-c moves to c2pa-rs 0.92.0.
-        [[deprecated("Use set_data_hash_exclusions(), update_hash_from_stream(), then sign_embeddable(format); "
-                     "the signer comes from the Builder's Context. "
-                     "Will be removed when c2pa-c moves to c2pa-rs 0.92.0.")]]
-        std::vector<unsigned char> sign_data_hashed_embeddable(Signer &signer, const std::string &data_hash, const std::string &format, std::istream *asset = nullptr);
-
         /// @brief Convert unformatted manifest data to an embeddable format.
         /// @param format The format for embedding.
-        /// @param data Unformatted manifest data from sign_data_hashed_embeddable using "c2pa" format.
+        /// @param data Unformatted manifest data in "application/c2pa" format.
         /// @return A formatted copy of the data.
         /// @deprecated Use sign_embeddable(format), which returns manifest bytes already formatted
         ///             for embedding. Will be removed when c2pa-c moves to c2pa-rs 0.92.0.

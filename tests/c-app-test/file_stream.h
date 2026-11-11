@@ -81,39 +81,40 @@ intptr_t flusher(StreamContext *context)
     return 0;
 }
 
-C2paStream *create_file_stream(FILE *file)
-{
-    if (file != NULL)
-    {
-        return c2pa_create_stream((StreamContext *)file, reader, seeker, writer, flusher);
-    }
-    return NULL;
-}
+typedef struct FileStream {
+    FILE *file;
+    C2paStream *stream;
+} FileStream;
 
-void release_stream(C2paStream *stream)
-{
-    c2pa_release_stream(stream);
-}
-
-C2paStream *open_file_stream(const char *path, const char *mode)
+FileStream *open_file_stream(const char *path, const char *mode)
 {
     FILE *file = fopen(path, mode);
-    if (file != NULL)
-    {
-        // printf("file open = %0lx\n", (unsigned long)file);
-        return create_file_stream(file);
+    if (file == NULL) {
+        return NULL;
     }
-    return NULL;
+    FileStream *wrapper = (FileStream *)malloc(sizeof(*wrapper));
+    if (wrapper == NULL) {
+        fclose(file);
+        return NULL;
+    }
+    wrapper->file = file;
+    wrapper->stream = c2pa_create_stream((StreamContext *)file, reader, seeker, writer, flusher);
+    if (wrapper->stream == NULL) {
+        fclose(file);
+        free(wrapper);
+        return NULL;
+    }
+    return wrapper;
 }
 
-int close_file_stream(C2paStream *stream)
+int close_file_stream(FileStream *stream)
 {
     if (stream == NULL) {
         return -1;
     }
-    FILE *file = (FILE *)stream->context;
-    int result = fclose(file);
-    c2pa_release_stream(stream);
+    c2pa_release_stream(stream->stream);
+    int result = fclose(stream->file);
+    free(stream);
     return result;
 }
 

@@ -90,11 +90,8 @@ namespace c2pa
     Builder::Builder(const std::string &manifest_json)
         : builder(nullptr)
     {
-        builder = c2pa_builder_from_json(manifest_json.c_str());
-        if (builder == nullptr)
-        {
-            throw C2paException();
-        }
+        Context context;
+        init_from_context(context, manifest_json);
     }
 
     /// @brief Create a Builder from an archive.
@@ -394,33 +391,6 @@ namespace c2pa
         }
     }
 
-    std::vector<unsigned char> Builder::data_hashed_placeholder(uintptr_t reserve_size, const std::string &format)
-    {
-        const std::string normalized_format = detail::normalize_format(format);
-
-        const unsigned char *c2pa_manifest_bytes = nullptr;
-        auto result = c2pa_builder_data_hashed_placeholder(builder, reserve_size, normalized_format.c_str(), &c2pa_manifest_bytes);
-        return detail::to_byte_vector(c2pa_manifest_bytes, result);
-    }
-
-    std::vector<unsigned char> Builder::sign_data_hashed_embeddable(Signer &signer, const std::string &data_hash, const std::string &format, std::istream *asset)
-    {
-        const std::string normalized_format = detail::normalize_format(format);
-
-        int64_t result;
-        const unsigned char *c2pa_manifest_bytes = nullptr;
-        if (asset)
-        {
-            CppIStream c_asset(*asset);
-            result = c2pa_builder_sign_data_hashed_embeddable(builder, signer.c2pa_signer(), data_hash.c_str(), normalized_format.c_str(), c_asset.c_stream, &c2pa_manifest_bytes);
-        }
-        else
-        {
-            result = c2pa_builder_sign_data_hashed_embeddable(builder, signer.c2pa_signer(), data_hash.c_str(), normalized_format.c_str(), nullptr, &c2pa_manifest_bytes);
-        }
-        return detail::to_byte_vector(c2pa_manifest_bytes, result);
-    }
-
     bool Builder::needs_placeholder(const std::string &format)
     {
         const std::string resolved_format = detail::resolve_format(format);
@@ -487,7 +457,9 @@ namespace c2pa
         const std::string normalized_format = detail::normalize_format(format);
 
         const unsigned char *c2pa_manifest_bytes = nullptr;
-        auto result = c2pa_format_embeddable(normalized_format.c_str(), data.data(), data.size(), &c2pa_manifest_bytes);
+        Context context;
+        Builder composer(context);
+        auto result = c2pa_builder_compose_manifest(composer.c2pa_builder(), normalized_format.c_str(), data.data(), data.size(), &c2pa_manifest_bytes);
         return detail::to_byte_vector(c2pa_manifest_bytes, result);
     }
 

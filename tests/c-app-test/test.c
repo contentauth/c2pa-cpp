@@ -22,12 +22,17 @@ int main(void)
 {
     char *version = c2pa_version();
     assert_contains("version", version, "c2pa-c-ffi/0.");
+    c2pa_free(version);
 
-    C2paStream *input_stream = open_file_stream("tests/fixtures/C.jpg", "rb");
+    FileStream *input_stream = open_file_stream("tests/fixtures/C.jpg", "rb");
     assert_not_null("open_file_stream", input_stream);
 
-    C2paReader *reader = c2pa_reader_from_stream("image/jpeg", input_stream);
-    assert_not_null("c2pa_reader_from_stream", reader);
+    C2paContext *context = c2pa_context_new();
+    assert_not_null("c2pa_context_new", context);
+    C2paReader *reader = c2pa_reader_from_context(context);
+    assert_not_null("c2pa_reader_from_context", reader);
+    reader = c2pa_reader_with_stream(reader, "image/jpeg", input_stream->stream);
+    assert_not_null("c2pa_reader_with_stream", reader);
 
     close_file_stream(input_stream);
 
@@ -44,11 +49,12 @@ int main(void)
     }
 
     // Open a file to write the thumbnail into
-    C2paStream *thumb_stream = open_file_stream("build/thumb_c.jpg", "wb");
+    FileStream *thumb_stream = open_file_stream("build/thumb_c.jpg", "wb");
     assert_not_null("open_file_stream thumbnail", thumb_stream);
 
     // write the thumbnail resource to the stream
-    int res = c2pa_reader_resource_to_stream(reader, uri, thumb_stream);
+    int res = c2pa_reader_resource_to_stream(reader, uri, thumb_stream->stream);
+    close_file_stream(thumb_stream);
     free(uri);
     if (json != NULL)
         c2pa_free(json);
@@ -62,34 +68,42 @@ int main(void)
 
     char *manifest = load_file("tests/fixtures/training.json");
 
-    C2paBuilder *builder = c2pa_builder_from_json(manifest);
-    assert_not_null("c2pa_builder_from_json", builder);
+    C2paBuilder *builder = c2pa_builder_from_context(context);
+    assert_not_null("c2pa_builder_from_context", builder);
+    builder = c2pa_builder_with_definition(builder, manifest);
+    assert_not_null("c2pa_builder_with_definition", builder);
 
-    C2paStream *archive = open_file_stream("build/archive.zip", "wb");
-    int arch_result = c2pa_builder_to_archive(builder, archive);
+    FileStream *archive = open_file_stream("build/archive.zip", "wb");
+    assert_not_null("open archive", archive);
+    int arch_result = c2pa_builder_to_archive(builder, archive->stream);
     assert_int("c2pa_builder_to_archive", arch_result);
     close_file_stream(archive);
 
-    C2paStream *archive2 = open_file_stream("build/archive.zip", "rb");
-    C2paBuilder *builder2 = c2pa_builder_from_archive(archive2);
-    assert_not_null("c2pa_builder_from_archive", builder2);
+    FileStream *archive2 = open_file_stream("build/archive.zip", "rb");
+    assert_not_null("open archive for reading", archive2);
+    C2paBuilder *builder2 = c2pa_builder_from_context(context);
+    assert_not_null("c2pa_builder_from_context", builder2);
+    builder2 = c2pa_builder_with_archive(builder2, archive2->stream);
+    assert_not_null("c2pa_builder_with_archive", builder2);
     close_file_stream(archive2);
 
     C2paSigner *signer = c2pa_signer_create((const void *)"testing context", &signer_callback, Es256, certs, "http://timestamp.digicert.com");
     assert_not_null("c2pa_signer_create", signer);
 
-    C2paStream *source = open_file_stream("tests/fixtures/C.jpg", "rb");
+    FileStream *source = open_file_stream("tests/fixtures/C.jpg", "rb");
+    assert_not_null("open source", source);
     remove("build/earth4.jpg");
     // stream needs to be w+b because we'll write, rewind, read
-    C2paStream *dest = open_file_stream("build/earth4.jpg", "w+b");
+    FileStream *dest = open_file_stream("build/earth4.jpg", "w+b");
+    assert_not_null("open destination", dest);
 
     const unsigned char *manifest_bytes = NULL; // todo: test passing NULL instead of a pointer
-    int64_t result2 = c2pa_builder_sign(builder2, "image/jpeg", source, dest, signer, &manifest_bytes);
+    int64_t result2 = c2pa_builder_sign(builder2, "image/jpeg", source->stream, dest->stream, signer, &manifest_bytes);
     assert_int("c2pa_builder_sign", result2);
 
     const unsigned char *formatted_bytes = NULL;
-    int64_t result3 = c2pa_format_embeddable("image/jpeg", manifest_bytes, result2, (const unsigned char **)&formatted_bytes);
-    assert_int("c2pa_format_embeddable", result3);
+    int64_t result3 = c2pa_builder_compose_manifest(builder2, "image/jpeg", manifest_bytes, result2, &formatted_bytes);
+    assert_int("c2pa_builder_compose_manifest", result3);
     if (manifest_bytes != NULL)
         c2pa_free((void *)manifest_bytes);
     if (formatted_bytes != NULL)
@@ -104,6 +118,7 @@ int main(void)
         c2pa_free(builder);
     if (signer != NULL)
         c2pa_free(signer);
+    c2pa_free(context);
 
     free(certs);
     free(private_key);

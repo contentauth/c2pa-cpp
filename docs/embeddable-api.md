@@ -11,6 +11,24 @@ The embeddable signing API provides direct, fine-grained control over embedding 
 4. Sign the claim.
 5. Patch the manifest in place.
 
+## Migrating from the removed data-hashed APIs
+
+The methods `data_hashed_placeholder(reserve_size, format)`
+and `sign_data_hashed_embeddable(signer, data_hash, format, asset)` have been removed.
+The supported workflow is:
+
+1. Attach the signer to the Context before constructing the Builder.
+2. Call `placeholder(format)` and embed the returned bytes in the asset.
+3. Call `set_data_hash_exclusions()` with the embedded placeholder's byte offset and length.
+4. Call `update_hash_from_stream(format, asset)` to hash the asset.
+5. Call `sign_embeddable(format)` and overwrite the placeholder with its result.
+
+The new workflow obtains the signature reserve size from the Context signer and
+computes the hash from the supplied stream; it does not accept the old precomputed
+DataHash JSON argument. Do not change the asset outside the excluded placeholder
+region after hashing. `format_embeddable(format, data)` remains available for raw
+manifest bytes and now uses the supported `c2pa_builder_compose_manifest` API.
+
 ## Why use the embeddable API
 
 The standard `Builder::sign()` handles the full pipeline internally:
@@ -23,7 +41,7 @@ auto manifest_bytes = builder.sign(source_path, output_path, signer);
 The standard approach works for most use cases. The embeddable API exists for situations where the application requires explicit control over embedding, for example:
 
 - The application controls its own I/O pipeline. Video transcoders, streaming ingestion services, and other tools have their own asset-writing code. Transferring stream ownership to the SDK conflicts with that architecture.
-- The asset is too large to buffer. The SDK's `sign()` may re-read large files. With the embeddable API, the application can hash chunks as it writes them and pass the results directly to the builder.
+- The asset is too large to buffer. The embeddable API can hash an asset through a stream without requiring the entire asset in memory.
 - The application needs in-place patching. When using the placeholder workflow, `sign_embeddable()` returns a signed manifest that is byte-for-byte the same size as the placeholder. The caller can then overwrite the placeholder region in the file without changing the overall file size or shifting any surrounding data.
 
 ## Concepts
@@ -78,9 +96,9 @@ To use `BoxHash` mode, enable `prefer_box_hash` in Builder settings. These forma
 
 When `needs_placeholder()` returns `false`, the standard `Builder::sign()` flow is usually all you need. The embeddable API (`update_hash_from_stream()` + `sign_embeddable()`) is available for situations where you need finer control over the process:
 
-- The application controls its own write pipeline (e.g., a video transcoder or streaming ingest service) and wants to hash the asset during its own write pass rather than having the SDK re-read the finished file.
+- The application controls its own write pipeline (e.g., a video transcoder or streaming ingest service) and can provide a readable asset stream for the SDK to hash after writing.
 - The application needs to receive the raw signed manifest bytes and decide where and how to append them as a new chunk, rather than letting the SDK write to a destination path.
-- Using the SDK, the application produces the asset incrementally, so it can pass the stream to `update_hash_from_stream()` at the right moment, then call `sign_embeddable()` to get the manifest without a second full read.
+- The application produces the asset incrementally and can pass the completed asset stream to `update_hash_from_stream()`, then call `sign_embeddable()` to obtain the manifest.
 
 <!-- 
 The `prefer_box_hash` setting can be provided in a JSON settings file:
@@ -189,17 +207,11 @@ These methods perform the signing workflow: placeholder creation, hashing, and s
 | `Builder::update_hash_from_stream(format, stream)` | Reads the asset stream and computes the hard-binding hash. Automatically selects the appropriate path based on format: `BmffHash` for BMFF (skips manifest box), `BoxHash` for chunk-based formats (creates assertion if needed), or `DataHash` (skips exclusion ranges). Takes a `std::istream&`. |
 | `Builder::sign_embeddable(format)` | Signs the manifest and returns bytes ready to embed. For placeholder workflows, it pads the output to match the placeholder size for in-place patching. For BoxHash workflows, the output is the actual signed manifest size (not padded), suitable for appending as a new chunk. |
 
-### Deprecated methods
+### Deprecated method
 
-The c2pa-rs 0.92.0 removes C FFI functions behind some `Builder` methods. These methods will be removed when c2pa-c moves to c2pa-rs 0.92.0.
-
-| Deprecated method | Replacement |
-|-------------------|-------------|
-| `data_hashed_placeholder(reserved_size, format)` | `needs_placeholder(format)`, then `placeholder(format)`. The reserve size comes from the signer on the Context. |
-| `sign_data_hashed_embeddable(signer, data_hash, format, asset)` | `set_data_hash_exclusions(exclusions)`, `update_hash_from_stream(format, stream)`, then `sign_embeddable(format)`. The signer comes from the Context. |
-| `format_embeddable(format, data)` | `sign_embeddable(format)`, which returns bytes already formatted for `format`. |
-
-For the full replacement flow, see [Using the DataHash placeholder](#using-the-datahash-placeholder).
+`Builder::format_embeddable(format, data)` remains available for formatting raw
+manifest bytes. Prefer `sign_embeddable(format)`, which returns bytes already
+formatted for embedding.
 
 ## Using the DataHash placeholder
 

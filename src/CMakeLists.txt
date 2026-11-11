@@ -33,7 +33,13 @@ set(C2PA_RS_PATH "" CACHE PATH "Path to c2pa-rs repository (required if C2PA_BUI
 set(C2PA_PREBUILT_BASE_URL "https://github.com/contentauth/c2pa-rs/releases/download" CACHE STRING
     "Base URL for prebuilt c2pa_c release downloads")
 
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+if(MSVC AND MSVC_CXX_ARCHITECTURE_ID)
+    set(C2PA_TARGET_PROCESSOR "${MSVC_CXX_ARCHITECTURE_ID}")
+else()
+    set(C2PA_TARGET_PROCESSOR "${CMAKE_SYSTEM_PROCESSOR}")
+endif()
+string(TOLOWER "${C2PA_TARGET_PROCESSOR}" C2PA_TARGET_PROCESSOR)
+if(C2PA_TARGET_PROCESSOR MATCHES "arm64|aarch64")
     set(C2PA_PROCESSOR "aarch64")
 else()
     set(C2PA_PROCESSOR "x86_64")
