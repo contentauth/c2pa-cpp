@@ -18,11 +18,14 @@
 
 namespace c2pa
 {
-    /// IStream Class wrapper for C2paStream.
-    CppIStream::~CppIStream()
+    CppStream::~CppStream()
     {
-        c2pa_release_stream(c_stream);
+        if (c_stream != nullptr) {
+            c2pa_release_stream(c_stream);
+        }
     }
+
+    CppIStream::~CppIStream() = default;
 
     intptr_t CppIStream::reader(StreamContext *context, uint8_t *buffer, intptr_t size)
     {
@@ -48,11 +51,7 @@ namespace c2pa
         return stream_error_return(StreamError::InvalidArgument);
     }
 
-    /// Ostream Class wrapper for C2paStream implementation.
-    CppOStream::~CppOStream()
-    {
-        c2pa_release_stream(c_stream);
-    }
+    CppOStream::~CppOStream() = default;
 
     intptr_t CppOStream::reader(StreamContext *context, uint8_t *buffer, intptr_t size)
     {
@@ -77,11 +76,7 @@ namespace c2pa
         return detail::stream_flusher<std::ostream>(context);
     }
 
-    /// IOStream Class wrapper for C2paStream implementation.
-    CppIOStream::~CppIOStream()
-    {
-        c2pa_release_stream(c_stream);
-    }
+    CppIOStream::~CppIOStream() = default;
 
     intptr_t CppIOStream::reader(StreamContext *context, uint8_t *buffer, intptr_t size)
     {

@@ -543,14 +543,30 @@ namespace c2pa
     /// - seeker(context, offset, whence): seek to offset (whence = Start/Current/End); return new position or -1 (set errno).
     /// - flusher(context): flush; return 0 on success, -1 on error (set errno).
 
-    /// @brief Input stream IStream wrapper for C2paStream.
-    /// @details This class is used to wrap an input stream for use with the C2PA library.
-    class C2PA_CPP_API CppIStream
+    /// @brief Common owning base for C++ wrappers of opaque C2paStream handles.
+    /// @details The wrapped C++ stream must outlive this wrapper.
+    class C2PA_CPP_API CppStream
     {
     public:
         /// @brief Pointer to the underlying C2paStream.
-        C2paStream *c_stream;
+        C2paStream *c_stream = nullptr;
 
+        CppStream(const CppStream &) = delete;
+        CppStream &operator=(const CppStream &) = delete;
+        CppStream(CppStream &&) = delete;
+        CppStream &operator=(CppStream &&) = delete;
+
+        virtual ~CppStream();
+
+    protected:
+        CppStream() = default;
+    };
+
+    /// @brief Input stream IStream wrapper for C2paStream.
+    /// @details This class is used to wrap an input stream for use with the C2PA library.
+    class C2PA_CPP_API CppIStream : public CppStream
+    {
+    public:
         /// @brief Construct an input stream wrapper from a std::istream-derived object.
         /// @tparam IStream Type derived from std::istream.
         /// @param istream The input stream to wrap (must be open and valid).
@@ -574,7 +590,7 @@ namespace c2pa
 
         CppIStream &operator=(CppIStream &&) = delete;
 
-        ~CppIStream();
+        ~CppIStream() override;
 
     private:
         /// @brief Reader callback implementation.
@@ -608,12 +624,9 @@ namespace c2pa
 
     /// @brief Output stream OStream wrapper for C2paStream.
     /// @details This class is used to wrap an output stream for use with the C2PA library.
-    class C2PA_CPP_API CppOStream
+    class C2PA_CPP_API CppOStream : public CppStream
     {
     public:
-        /// @brief Pointer to the underlying C2paStream.
-        C2paStream *c_stream;
-
         /// @brief Construct an output stream wrapper from a std::ostream-derived object.
         /// @tparam OStream Type derived from std::ostream.
         /// @param ostream The output stream to wrap (must be open and valid).
@@ -636,7 +649,7 @@ namespace c2pa
 
         CppOStream &operator=(CppOStream &&) = delete;
 
-        ~CppOStream();
+        ~CppOStream() override;
 
     private:
         /// @brief Reader callback implementation (not used for output streams).
@@ -668,12 +681,9 @@ namespace c2pa
 
     /// @brief IOStream Class wrapper for C2paStream.
     /// @details This class is used to wrap an input/output stream for use with the C2PA library.
-    class C2PA_CPP_API CppIOStream
+    class C2PA_CPP_API CppIOStream : public CppStream
     {
     public:
-        /// @brief Pointer to the underlying C2paStream.
-        C2paStream *c_stream;
-
         /// @brief Construct an I/O stream wrapper from a std::iostream-derived object.
         /// @tparam IOStream Type derived from std::iostream.
         /// @param iostream The I/O stream to wrap (must be open and valid).
@@ -696,7 +706,7 @@ namespace c2pa
 
         CppIOStream &operator=(CppIOStream &&) = delete;
 
-        ~CppIOStream();
+        ~CppIOStream() override;
 
     private:
         /// @brief Reader callback implementation.

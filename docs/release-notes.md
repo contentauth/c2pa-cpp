@@ -14,7 +14,9 @@ behavior:
   [embeddable signing workflow](embeddable-api.md#migrating-from-the-removed-data-hashed-apis).
   The new workflow does not accept a precomputed DataHash JSON value.
 - The C++ stream wrappers no longer inherit from `C2paStream`, which is opaque
-  in the C API. Use their `c_stream` member when passing a stream to C.
+  in the C API. They share the owning `CppStream` base instead, which supports
+  polymorphic destruction. Use its `c_stream` member when passing a stream to C;
+  the underlying C++ stream must outlive the wrapper.
 
 Applications using `C2PA_RS_PATH` or `C2PA_C_LIB_OVERRIDE` must update their
 own native library to a compatible 0.92.0 build.
