@@ -874,3 +874,38 @@ TEST_F(ContextTest, ContextMoveAssignWithCallbackPreservesInvocation) {
     EXPECT_EQ(lhs.load(), 0);
     EXPECT_GT(rhs.load(), 0);
 }
+
+static int capture_timeout(void* user_data, const C2paHttpRequest* request, C2paHttpResponse* response)
+{
+    static_cast<std::atomic<uint64_t>*>(user_data)->store(request->timeout_ms);
+    response->status = 200;
+    response->body = nullptr;
+    response->body_len = 0;
+    return 0;
+}
+
+TEST(Context, HttpResolverReceivesRemoteManifestTimeout)
+{
+    for (const auto& [settings_json, expected] : {
+             std::pair<const char*, uint64_t>{"{}", 10000},
+             std::pair<const char*, uint64_t>{
+                 R"({"verify":{"remote_manifest_request_timeout_in_ms":2500}})", 2500},
+         }) {
+        std::atomic<uint64_t> seen{0};
+        c2pa::Context context = c2pa::Context::ContextBuilder()
+            .with_json(settings_json)
+            .with_http_resolver(&seen, capture_timeout)
+            .create_context();
+
+        std::ifstream asset(fixture_path("cloud.jpg"), std::ios::binary);
+        ASSERT_TRUE(asset.is_open());
+        try {
+            c2pa::Reader reader(context, "image/jpeg", asset);
+        } catch (const c2pa::C2paException&) {
+            // The empty callback response is not a manifest; only the request matters here.
+        }
+
+        EXPECT_LE(seen.load(), expected);
+        EXPECT_GE(seen.load(), expected - 100);
+    }
+}

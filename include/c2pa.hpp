@@ -401,6 +401,8 @@ namespace c2pa
             /// @details The callback is invoked synchronously whenever the SDK needs to
             ///          make an HTTP request (remote manifest fetch, OCSP, timestamp, etc.).
             ///          The callback receives a C2paHttpRequest and must fill in a C2paHttpResponse.
+            ///          The SDK cannot interrupt the callback; it must apply request->timeout_ms
+            ///          (total limit in milliseconds, 0 for none) to its HTTP client.
             ///          The response body must be allocated with malloc(); the underlying native library will call free().
             /// @param user_data Opaque user pointer passed to every callback invocation (may be nullptr).
             /// @param callback Function pointer matching C2paHttpResolverCallback.
