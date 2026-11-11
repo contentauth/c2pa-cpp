@@ -2,6 +2,8 @@
 
 ## 0.27.0 — breaking changes
 
+11 November 2026
+
 This release updates the native SDK to c2pa-rs **0.92.0** and requires a
 minor version bump because it removes deprecated C++ APIs and changes their
 behavior:
