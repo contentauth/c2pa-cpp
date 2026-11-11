@@ -65,22 +65,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Checkout c2pa-rs (0.92.0)
-        uses: actions/checkout@v4
-        with:
-          repository: contentauth/c2pa-rs
-          ref: c2pa-v0.92.0
-          path: c2pa-rs
-
-      - name: Configure c2pa-rs source build
-        shell: bash
-        run: |
-          git -C c2pa-rs log -1 --format='c2pa-rs checkout: %H %s'
-          cargo --version
-          rustc --version
-          echo "C2PA_BUILD_FROM_SOURCE=ON" >> "$GITHUB_ENV"
-          echo "C2PA_RS_PATH=${GITHUB_WORKSPACE//\\//}/c2pa-rs" >> "$GITHUB_ENV"
-
       - name: Check cmake
         run: cmake --version
 
@@ -98,15 +82,9 @@ jobs:
           which make
           make --version
 
-      - name: Run tests (debug build)
+      - name: Build and test against c2pa-rs 0.92.0 release
         run: make test
 
       - name: Run tests (debug build, with sanitizers)
         if: runner.os != 'Windows'
         run: make test-san
-
-      - name: Build and test with released prebuilt library
-        run: |
-          cmake -S . -B build/prebuilt -G Ninja -DCMAKE_BUILD_TYPE=Debug -DC2PA_BUILD_FROM_SOURCE=OFF
-          cmake --build build/prebuilt
-          ctest --test-dir build/prebuilt --output-on-failure
