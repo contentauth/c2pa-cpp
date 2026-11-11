@@ -10,12 +10,13 @@
 #include <sstream>
 #include <type_traits>
 
-static_assert(std::is_base_of_v<c2pa::CppStream, c2pa::CppIStream>);
-static_assert(std::is_base_of_v<c2pa::CppStream, c2pa::CppOStream>);
-static_assert(std::is_base_of_v<c2pa::CppStream, c2pa::CppIOStream>);
-static_assert(std::has_virtual_destructor_v<c2pa::CppStream>);
-static_assert(!std::is_copy_constructible_v<c2pa::CppStream>);
-static_assert(!std::is_move_constructible_v<c2pa::CppStream>);
+static_assert(std::is_base_of_v<c2pa::C2paStream, c2pa::CppIStream>);
+static_assert(std::is_base_of_v<c2pa::C2paStream, c2pa::CppOStream>);
+static_assert(std::is_base_of_v<c2pa::C2paStream, c2pa::CppIOStream>);
+static_assert(std::has_virtual_destructor_v<c2pa::C2paStream>);
+static_assert(!std::is_copy_constructible_v<c2pa::C2paStream>);
+static_assert(!std::is_move_constructible_v<c2pa::C2paStream>);
+static_assert(std::is_same_v<decltype(c2pa::C2paStream::c_stream), ::C2paStream*>);
 
 TEST(StreamWrappers, OwnHandlesThroughCommonBase)
 {
@@ -23,7 +24,7 @@ TEST(StreamWrappers, OwnHandlesThroughCommonBase)
     std::ostringstream output;
     std::stringstream bidirectional("both");
 
-    std::unique_ptr<c2pa::CppStream> wrappers[] = {
+    std::unique_ptr<c2pa::C2paStream> wrappers[] = {
         std::make_unique<c2pa::CppIStream>(input),
         std::make_unique<c2pa::CppOStream>(output),
         std::make_unique<c2pa::CppIOStream>(bidirectional)

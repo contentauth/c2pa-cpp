@@ -18,7 +18,7 @@
 
 namespace c2pa
 {
-    CppStream::~CppStream()
+    C2paStream::~C2paStream()
     {
         if (c_stream != nullptr) {
             c2pa_release_stream(c_stream);

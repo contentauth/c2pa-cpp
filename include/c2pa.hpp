@@ -545,26 +545,26 @@ namespace c2pa
 
     /// @brief Common owning base for C++ wrappers of opaque C2paStream handles.
     /// @details The wrapped C++ stream must outlive this wrapper.
-    class C2PA_CPP_API CppStream
+    class C2PA_CPP_API C2paStream
     {
     public:
         /// @brief Pointer to the underlying C2paStream.
-        C2paStream *c_stream = nullptr;
+        ::C2paStream *c_stream = nullptr;
 
-        CppStream(const CppStream &) = delete;
-        CppStream &operator=(const CppStream &) = delete;
-        CppStream(CppStream &&) = delete;
-        CppStream &operator=(CppStream &&) = delete;
+        C2paStream(const C2paStream &) = delete;
+        C2paStream &operator=(const C2paStream &) = delete;
+        C2paStream(C2paStream &&) = delete;
+        C2paStream &operator=(C2paStream &&) = delete;
 
-        virtual ~CppStream();
+        virtual ~C2paStream();
 
     protected:
-        CppStream() = default;
+        C2paStream() = default;
     };
 
     /// @brief Input stream IStream wrapper for C2paStream.
     /// @details This class is used to wrap an input stream for use with the C2PA library.
-    class C2PA_CPP_API CppIStream : public CppStream
+    class C2PA_CPP_API CppIStream : public C2paStream
     {
     public:
         /// @brief Construct an input stream wrapper from a std::istream-derived object.
@@ -624,7 +624,7 @@ namespace c2pa
 
     /// @brief Output stream OStream wrapper for C2paStream.
     /// @details This class is used to wrap an output stream for use with the C2PA library.
-    class C2PA_CPP_API CppOStream : public CppStream
+    class C2PA_CPP_API CppOStream : public C2paStream
     {
     public:
         /// @brief Construct an output stream wrapper from a std::ostream-derived object.
@@ -681,7 +681,7 @@ namespace c2pa
 
     /// @brief IOStream Class wrapper for C2paStream.
     /// @details This class is used to wrap an input/output stream for use with the C2PA library.
-    class C2PA_CPP_API CppIOStream : public CppStream
+    class C2PA_CPP_API CppIOStream : public C2paStream
     {
     public:
         /// @brief Construct an I/O stream wrapper from a std::iostream-derived object.

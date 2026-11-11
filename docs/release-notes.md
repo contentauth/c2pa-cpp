@@ -15,10 +15,12 @@ behavior:
   have been removed. Configure a signer on the `Context` and use the
   [embeddable signing workflow](embeddable-api.md#migrating-from-the-removed-data-hashed-apis).
   The new workflow does not accept a precomputed DataHash JSON value.
-- The C++ stream wrappers no longer inherit from `C2paStream`, which is opaque
-  in the C API. They share the owning `CppStream` base instead, which supports
-  polymorphic destruction. Use its `c_stream` member when passing a stream to C;
-  the underlying C++ stream must outlive the wrapper.
+- The C++ stream wrappers now share the owning `c2pa::C2paStream` base, which
+  supports polymorphic destruction. The global C API type `::C2paStream` is
+  opaque and is no longer their base. Code using a global `::C2paStream*` as a
+  wrapper base must use `c2pa::C2paStream*` instead. Use the wrapper's `c_stream`
+  member when passing a stream to C; the underlying C++ stream must outlive the
+  wrapper. Qualify the type when both the C and C++ names are in scope.
 
 Applications using `C2PA_RS_PATH` or `C2PA_C_LIB_OVERRIDE` must update their
 own native library to a compatible 0.92.0 build.
