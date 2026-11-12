@@ -889,7 +889,7 @@ TEST(Context, HttpResolverReceivesRemoteManifestTimeout)
     for (const auto& [settings_json, expected] : {
              std::pair<const char*, uint64_t>{"{}", 10000},
              std::pair<const char*, uint64_t>{
-                 R"({"verify":{"remote_manifest_request_timeout_in_ms":2500}})", 2500},
+                 R"({"core":{"http_request_timeout_in_ms":2500}})", 2500},
          }) {
         std::atomic<uint64_t> seen{0};
         c2pa::Context context = c2pa::Context::ContextBuilder()
