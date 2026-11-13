@@ -60,8 +60,8 @@ c2pa::Reader reader(context, "image.jpg");
 - **Improves code clarity**: `Builder(context, manifest)` shows configuration is being used
 
 > [!NOTE]
-> `c2pa::load_settings(data, format)` has been removed on this nightly-compatibility branch. Pass settings explicitly through a `Context`.
-> See [Migrating from deprecated APIs](#migrating-from-deprecated-apis).
+> Pass settings explicitly through a `Context`. For existing applications, see
+> [Migrating from deprecated APIs](#migrating-from-deprecated-apis).
 
 ### Context lifecycle
 
@@ -883,13 +883,16 @@ c2pa::Context context(R"({
 
 ## Migrating from deprecated APIs
 
-The SDK introduced Context-based APIs to replace constructors and functions that relied on thread-local state. On this nightly-compatibility branch, `load_settings` has been removed. The context-free `Reader` and `Builder` constructors still compile with deprecation warnings, but create a new default Context rather than reading thread-local settings. This section covers migration to explicit contexts and the `Builder::sign` overloads.
+The SDK introduced Context-based APIs to replace constructors and functions that relied on thread-local state. `load_settings` has been removed. The context-free `Reader` and `Builder` constructors still compile with deprecation warnings, but create a new default Context rather than reading thread-local settings. This section covers migration to explicit contexts and the `Builder::sign` overloads.
 
 ### Quick reference
 
-| Removed or deprecated API | Replacement |
+| Removed API | Replacement |
 |---|---|
 | `load_settings(data, format)` | [`Context` constructors or `ContextBuilder`](#replacing-load_settings) |
+
+| Deprecated API | Replacement |
+|---|---|
 | `Reader(format, stream)` | [`Reader(shared_ptr<IContextProvider>, format, stream)`](#adding-a-context-parameter-to-reader-and-builder) |
 | `Reader(source_path)` | [`Reader(shared_ptr<IContextProvider>, source_path)`](#adding-a-context-parameter-to-reader-and-builder) |
 | `Builder(manifest_json)` | [`Builder(shared_ptr<IContextProvider>, manifest_json)`](#adding-a-context-parameter-to-reader-and-builder) |
@@ -906,19 +909,10 @@ The removed `c2pa::load_settings(data, format)` used to set thread-local setting
 | Multiple configs | Awkward (per-thread) | One context per configuration |
 | Testing | Shared global state | Isolated contexts per test |
 
-**Removed (old code):**
-
-```cpp
-std::ifstream config_file("settings.json");
-std::string config((std::istreambuf_iterator<char>(config_file)), std::istreambuf_iterator<char>());
-c2pa::load_settings(config, "json");
-c2pa::Reader reader("image/jpeg", stream);  // uses thread-local settings
-```
-
 **With context API:**
 
 ```cpp
-c2pa::Context context(settings_json_string);  // or Context(Settings(...))
+auto context = std::make_shared<c2pa::Context>(settings_json_string);
 c2pa::Reader reader(context, "image/jpeg", stream);
 ```
 

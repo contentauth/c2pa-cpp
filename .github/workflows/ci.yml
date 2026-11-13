@@ -98,7 +98,7 @@ jobs:
           which make
           make --version
 
-      - name: Run tests (debug build)
+      - name: Build and test against c2pa-rs 0.92.0 release
         run: make test
 
       - name: Run tests (debug build, with sanitizers)
