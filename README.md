@@ -189,11 +189,7 @@ releases. The first tag in `api-docs/versions.json` is
 the default at the existing root URL; each release is also available at
 `https://contentauth.github.io/c2pa-cpp/versions/<tag>/`.
 
-To generate API docs locally, these are the main files:
-
-- Configuration file: `c2pa-cpp/Doxyfile`
-- Script: `c2pa-cpp/scripts/generate_api_docs.sh`
-- Output directory: `api-docs/_build/html`
+#### Preview the versioned site
 
 Install Doxygen if needed:
 
@@ -202,16 +198,7 @@ macOS: brew install doxygen
 Ubuntu/Debian: sudo apt-get install doxygen
 ```
 
-To generate docs, enter the command:
-
-```sh
-./scripts/generate_api_docs.sh
-```
-
-Open `api-docs/_build/html/index.html` to see the working-tree documentation.
-This local build does not include a version selector.
-
-To build the versioned site, install Python 3.10 or newer and the
+Install Python 3.10 or newer and the
 [GitHub CLI](https://cli.github.com/), authenticate with `gh auth login` (or
 set `GH_TOKEN`), and ensure the selected release tags are available locally
 with `git fetch --tags`. Then run:
@@ -220,11 +207,26 @@ with `git fetch --tags`. Then run:
 python3 scripts/generate_versioned_api_docs.py
 ```
 
-Open `api-docs/_build/versioned/index.html` to see the default release.
+Open `api-docs/_build/versioned/index.html` to preview the default release,
+including the version selector.
 Version-specific pages are under `api-docs/_build/versioned/versions/<tag>/`.
 The build verifies that each configured tag has a published GitHub release and
 reads that tag's headers, C sources, and README without running release code.
 It uses the current branch's Doxygen configuration and styling.
+
+#### Preview unreleased changes
+
+The versioned site uses published release sources, not working-tree API changes.
+To preview local changes before release, run:
+
+```sh
+./scripts/generate_api_docs.sh
+```
+
+Open `api-docs/_build/html/index.html`. This Doxygen-only build uses the working
+tree and does not include a version selector or require GitHub authentication.
+
+#### Publishing
 
 Publishing a stable GitHub release automatically prepends its exact `vX.Y.Z`
 tag to `api-docs/versions.json` on `main`, preserving older entries and
