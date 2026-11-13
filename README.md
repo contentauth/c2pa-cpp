@@ -252,7 +252,18 @@ node --test tests/test_version_selector.js
 ```
 
 The selector tests require Node.js 18 or newer. CI runs these tests and builds
-the versioned documentation on pull requests.
+the versioned documentation on authorized pull requests, uploading the generated
+site as the `versioned-api-documentation` artifact. For contributors outside the
+existing trust gate, a maintainer must add the `safe to test` label to authorize
+the full build.
+
+The **Documentation version configuration** check runs independently of that
+gate. It validates the candidate `api-docs/versions.json` with the base branch's
+validator, without importing candidate Python code. The **Documentation checks**
+job fails unless both configuration validation and the full docs build succeed,
+including when the build is skipped. Configure branch protection or repository
+rules to require **Documentation checks** so skipped builds cannot satisfy the
+merge requirement.
 
 ## License
 
