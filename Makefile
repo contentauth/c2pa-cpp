@@ -5,9 +5,8 @@ BUILD_DIR = build
 DEBUG_BUILD_DIR = build/debug
 RELEASE_BUILD_DIR = build/release
 
-# Temporarily build against local c2pa-rs for C2paHttpRequest.timeout_ms; override to use prebuilt.
-C2PA_BUILD_FROM_SOURCE ?= ON
-C2PA_RS_PATH ?= $(abspath ../c2pa-rs)
+# Use published c2pa-rs binaries by default; source builds remain opt-in.
+C2PA_BUILD_FROM_SOURCE ?= OFF
 
 # CMake options (can be overridden via environment)
 CMAKE_OPTS :=
