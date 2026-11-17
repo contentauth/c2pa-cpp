@@ -9,11 +9,51 @@ on:
       - reopened
       - synchronize
       - labeled
+      - unlabeled
   push:
     branches:
       - main
 
 jobs:
+  docs-config:
+    name: Documentation version configuration
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout trusted validator
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          path: trusted
+          persist-credentials: false
+          sparse-checkout: scripts/generate_versioned_api_docs.py
+          sparse-checkout-cone-mode: false
+      - name: Checkout candidate configuration
+        uses: actions/checkout@v4
+        with:
+          path: candidate
+          persist-credentials: false
+          sparse-checkout: api-docs/versions.json
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Validate candidate configuration with trusted code
+        working-directory: trusted
+        run: |
+          python3 -I - <<'PY'
+          import importlib.util
+          from pathlib import Path
+
+          spec = importlib.util.spec_from_file_location(
+              "docs", "scripts/generate_versioned_api_docs.py"
+          )
+          docs = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(docs)
+          docs.load_versions(Path("../candidate/api-docs/versions.json"))
+          PY
+
   docs:
     name: Versioned API documentation
     permissions:
@@ -43,6 +83,29 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/generate_versioned_api_docs.py
+      - name: Upload documentation preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: versioned-api-documentation
+          path: api-docs/_build/versioned/
+          if-no-files-found: error
+
+  docs-required:
+    name: Documentation checks
+    needs: [docs-config, docs]
+    if: always()
+    permissions: {}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require successful validation and build
+        env:
+          CONFIG_RESULT: ${{ needs.docs-config.result }}
+          BUILD_RESULT: ${{ needs.docs.result }}
+        run: |
+          if [ "$CONFIG_RESULT" != success ] || [ "$BUILD_RESULT" != success ]; then
+            echo "::error::Documentation checks did not succeed (configuration: $CONFIG_RESULT, build: $BUILD_RESULT). A maintainer must authorize gated builds with the 'safe to test' label."
+            exit 1
+          fi
 
   tests:
     name: Unit tests
