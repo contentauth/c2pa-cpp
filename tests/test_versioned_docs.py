@@ -12,6 +12,9 @@ from scripts import generate_versioned_api_docs as docs
 
 
 class VersionedDocsTests(unittest.TestCase):
+    def test_checked_in_version_list_is_valid(self):
+        docs.load_versions(docs.ROOT / "api-docs/versions.json")
+
     def test_version_list_preserves_default_and_order(self):
         with tempfile.TemporaryDirectory() as directory:
             config = Path(directory) / "versions.json"
@@ -33,6 +36,16 @@ class VersionedDocsTests(unittest.TestCase):
                     config.write_text(json.dumps(value), encoding="utf-8")
                     with self.assertRaises(ValueError):
                         docs.load_versions(config)
+
+    def test_malformed_version_json_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "versions.json"
+            config.write_text(
+                '{"versions": ["v0.26.17","versions": ["v0.26.16"]}',
+                encoding="utf-8",
+            )
+            with self.assertRaises(json.JSONDecodeError):
+                docs.load_versions(config)
 
     @patch.object(docs.subprocess, "run")
     def test_published_release_is_verified(self, run):
