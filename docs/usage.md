@@ -68,6 +68,11 @@ The native library reads directly from it without an intermediate body copy,
 then calls `free` when the response is dropped, including error paths. After
 returning the response, the resolver must not reuse or release its body.
 
+When building against native headers that expose `C2paHttpRequest::timeout_ms`,
+custom HTTP resolvers must enforce a nonzero timeout for the whole request,
+including receiving the response body. Zero means no timeout. The SDK calls
+the resolver synchronously and cannot interrupt it.
+
 ## Read and validate an istream
 
 Use the `Reader` constructor to read C2PA data from a stream. This constructor examines the specified stream for C2PA data in the given format, and its return value is a `Reader` that you can use to extract more information. The constructor throws exceptions on errors.

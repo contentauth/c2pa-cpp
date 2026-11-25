@@ -467,6 +467,9 @@ namespace c2pa
             ///          The response body must be allocated with malloc(); the native library
             ///          reads it without an intermediate copy and calls free() when the
             ///          response is dropped, including error paths. Do not retain or free it.
+            ///          With native headers exposing C2paHttpRequest::timeout_ms, the
+            ///          callback must enforce a nonzero timeout, including reading the
+            ///          response body. The SDK cannot interrupt a running callback.
             /// @param user_data Opaque user pointer passed to every callback invocation (may be nullptr).
             /// @param callback Function pointer matching C2paHttpResolverCallback.
             /// @return Reference to this ContextBuilder for method chaining.

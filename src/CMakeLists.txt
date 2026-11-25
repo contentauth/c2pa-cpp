@@ -88,30 +88,21 @@ if(C2PA_BUILD_FROM_SOURCE)
     find_program(CARGO_EXECUTABLE cargo PATHS "$ENV{HOME}/.cargo/bin" REQUIRED)
     message(STATUS "Found cargo at: ${CARGO_EXECUTABLE}")
 
-    # Build the Rust c2pa_c_ffi library
-    add_custom_command(
-        OUTPUT "${C2PA_RUST_BUILD_DIR}/${C2PA_LIB_NAME}"
+    # Let Cargo track Rust source and dependency changes on every build.
+    add_custom_target(build_c2pa_c ALL
         COMMAND ${CARGO_EXECUTABLE} build --release --package c2pa-c-ffi --no-default-features --features "rust_native_crypto, file_io, http, add_thumbnails"
-        COMMAND ${CMAKE_COMMAND} -E copy
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${C2PA_RS_PATH}/target/release/${C2PA_LIB_NAME}"
             "${C2PA_RUST_BUILD_DIR}/${C2PA_LIB_NAME}"
-        WORKING_DIRECTORY "${C2PA_RS_PATH}"
-        COMMENT "Building c2pa_c from source using Cargo"
-        VERBATIM
-    )
-
-    # Create a custom target that depends on the library
-    add_custom_target(build_c2pa_c ALL
-        DEPENDS "${C2PA_RUST_BUILD_DIR}/${C2PA_LIB_NAME}"
-    )
-
-    # Copy the generated c2pa.h header
-    add_custom_command(
-        TARGET build_c2pa_c POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${C2PA_RS_PATH}/target/release/c2pa.h"
             "${C2PA_RUST_BUILD_DIR}/c2pa.h"
-        COMMENT "Copying c2pa.h header"
+        BYPRODUCTS
+            "${C2PA_RUST_BUILD_DIR}/${C2PA_LIB_NAME}"
+            "${C2PA_RUST_BUILD_DIR}/c2pa.h"
+        WORKING_DIRECTORY "${C2PA_RS_PATH}"
+        COMMENT "Building c2pa_c from source using Cargo"
+        VERBATIM
     )
 
     set(C2PA_C_LIB "${C2PA_RUST_BUILD_DIR}/${C2PA_LIB_NAME}")

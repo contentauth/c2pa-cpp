@@ -110,6 +110,20 @@ export DYLD_LIBRARY_PATH="$(pwd)/build/release/tests:$DYLD_LIBRARY_PATH"
 export LD_LIBRARY_PATH="$(pwd)/build/release/tests:$LD_LIBRARY_PATH"
 ```
 
+For a sibling `c2pa-rs` checkout, you can configure a separate build directly:
+
+```sh
+cmake -S . -B build/local-rs -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DC2PA_BUILD_FROM_SOURCE=ON -DC2PA_RS_PATH=../c2pa-rs
+cmake --build build/local-rs
+ctest --test-dir build/local-rs --output-on-failure
+```
+
+Source builds run Cargo's incremental build each time, then copy the matching
+native library and generated C header if they changed. Updating the Rust
+checkout does not require cleaning the C++ build. The prebuilt SDK version
+does not select or update the checkout supplied through `C2PA_RS_PATH`.
+
 ### Building the Emscripten/WebAssembly example
 
 The [`examples/emscripten_example.cpp`](https://github.com/contentauth/c2pa-cpp/blob/main/examples/emscripten_example.cpp) file demonstrates using the c2pa C++ library compiled to WebAssembly via Emscripten. It includes reading manifests from files, streams, and using a custom HTTP resolver with `emscripten_fetch`.
