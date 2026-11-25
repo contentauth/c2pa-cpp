@@ -16,9 +16,10 @@
   const select = document.createElement("select");
   select.setAttribute("aria-label", "API documentation version");
   for (const tag of versions) {
+    const line = tag.slice(1).split(".").slice(0, 2).join(".");
     const option = document.createElement("option");
-    option.value = new URL("versions/" + tag + "/index.html", root).href;
-    option.textContent = tag;
+    option.value = new URL("versions/" + line + "/index.html", root).href;
+    option.textContent = line;
     option.selected = tag === script.dataset.version;
     select.appendChild(option);
   }

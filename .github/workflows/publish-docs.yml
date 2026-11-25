@@ -1,74 +1,39 @@
 name: Build and publish docs
 
 on:
-  release:
-    types: [published]
-
   push:
     branches: ['main']
 
   workflow_dispatch:
 
+  workflow_run:
+    workflows: ['Promote API documentation versions']
+    types: [completed]
+
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: 'github-pages'
+  group: github-pages
   cancel-in-progress: false
 
 jobs:
-  update-versions:
-    if: github.event_name == 'release' && github.event.release.prerelease == false
+  build:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-
-      - name: Update documentation versions
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: |
-          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Expected a stable release tag such as v0.26.14."
-            exit 1
-          fi
-          jq --arg tag "$RELEASE_TAG" \
-            '.versions = [$tag] + (.versions - [$tag])' \
-            api-docs/versions.json > "$RUNNER_TEMP/versions.json"
-          mv "$RUNNER_TEMP/versions.json" api-docs/versions.json
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add api-docs/versions.json
-          if git diff --cached --quiet; then
-            echo "Documentation versions already include $RELEASE_TAG as the default."
-          else
-            git commit -m "docs: update API documentation versions for $RELEASE_TAG"
-            git push origin HEAD:main
-          fi
-
-  deploy:
-    needs: update-versions
-    if: |
-      !cancelled() &&
-      (needs.update-versions.result == 'success' || needs.update-versions.result == 'skipped')
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
+    outputs:
+      revision: ${{ steps.revision.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
           filter: tree:0
           fetch-depth: 0
           ref: main
+          persist-credentials: false
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
+      - name: Record current main revision
+        id: revision
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Install Doxygen
         run: sudo apt-get install doxygen
@@ -88,6 +53,36 @@ jobs:
         with:
           path: 'api-docs/_build/versioned/'
 
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Reject stale artifacts
+        id: current
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILT_SHA: ${{ needs.build.outputs.revision }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          current=$(gh api "repos/$REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          if [[ "$current" == "$BUILT_SHA" ]]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Skipping stale artifact $BUILT_SHA; main is $current."
+          fi
+
+      - name: Setup Pages
+        if: steps.current.outputs.deploy == 'true'
+        uses: actions/configure-pages@v5
+
       - name: Deploy to GitHub Pages
+        if: steps.current.outputs.deploy == 'true'
         id: deployment
         uses: actions/deploy-pages@v4

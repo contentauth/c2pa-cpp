@@ -9,14 +9,24 @@ from unittest.mock import Mock, patch
 import zipfile
 
 from scripts import generate_versioned_api_docs as docs
+from scripts.docs_versions import line
+
+
+def manifest(versions=None, aliases=None, retired=None):
+    versions = versions if versions is not None else ["v0.27.0", "v0.26.19"]
+    return {
+        "versions": versions,
+        "aliases": aliases if aliases is not None else {tag: line(tag) for tag in versions},
+        "retiredLines": retired if retired is not None else [],
+    }
 
 
 class VersionedDocsTests(unittest.TestCase):
-    def test_version_list_preserves_default_and_order(self):
+    def test_version_list_uses_highest_line_as_default(self):
         with tempfile.TemporaryDirectory() as directory:
             config = Path(directory) / "versions.json"
-            config.write_text('{"versions": ["v0.26.14", "v0.26.13"]}')
-            self.assertEqual(docs.load_versions(config), ["v0.26.14", "v0.26.13"])
+            config.write_text(json.dumps(manifest()))
+            self.assertEqual(docs.load_versions(config), ["v0.27.0", "v0.26.19"])
 
     def test_invalid_version_lists_are_rejected(self):
         invalid = [
@@ -37,7 +47,10 @@ class VersionedDocsTests(unittest.TestCase):
     @patch.object(docs.subprocess, "run")
     def test_published_release_is_verified(self, run):
         run.return_value = Mock(
-            stdout=json.dumps({"tag_name": "v0.26.14", "draft": False})
+            stdout=json.dumps({
+                "tag_name": "v0.26.14", "draft": False,
+                "prerelease": False, "published_at": "2026-01-01T00:00:00Z",
+            })
         )
         docs.verify_release("v0.26.14")
         run.assert_called_once_with(
@@ -51,6 +64,10 @@ class VersionedDocsTests(unittest.TestCase):
             {"tag_name": "v0.26.14", "draft": True},
             {"tag_name": "v0.26.13", "draft": False},
             {"tag_name": "v0.26.14"}, [],
+            {"tag_name": "v0.26.14", "draft": False, "prerelease": True,
+             "published_at": "2026-01-01T00:00:00Z"},
+            {"tag_name": "v0.26.14", "draft": False, "prerelease": False,
+             "published_at": None},
         ]:
             with self.subTest(release=release):
                 run.return_value = Mock(stdout=json.dumps(release))
@@ -152,13 +169,17 @@ class VersionedDocsTests(unittest.TestCase):
         def build(stage, output, tag, versions, prefix):
             (output / "html").mkdir(parents=True)
             (output / "html/index.html").write_text(f"{tag}:{prefix}")
+            (output / "html/nested").mkdir()
+            (output / "html/nested/class.html").write_text("API")
 
         build_html.side_effect = build
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "api-docs").mkdir()
             (root / "api-docs/versions.json").write_text(
-                '{"versions": ["v0.26.14", "v0.26.13"]}'
+                json.dumps(manifest(aliases={
+                    "v0.27.0": "0.27", "v0.26.19": "0.26", "v0.26.13": "0.26",
+                }))
             )
             (root / "Doxyfile").touch()
             (root / "docs").mkdir()
@@ -166,12 +187,16 @@ class VersionedDocsTests(unittest.TestCase):
                 (root / "docs" / asset).touch()
             with patch.object(docs, "ROOT", root):
                 site = docs.build_site()
-                self.assertEqual((site / "index.html").read_text(), "v0.26.14:")
-                for tag in ("v0.26.14", "v0.26.13"):
+                self.assertEqual((site / "index.html").read_text(), "v0.27.0:")
+                for tag in ("v0.27.0", "v0.26.19"):
                     self.assertEqual(
-                        (site / "versions" / tag / "index.html").read_text(),
-                        f"{tag}:versions/{tag}",
+                        (site / "versions" / line(tag) / "index.html").read_text(),
+                        f"{tag}:versions/{line(tag)}",
                     )
+                redirect = (site / "versions/v0.26.13/nested/class.html").read_text()
+                self.assertIn("../../0.26/nested/class.html", redirect)
+                self.assertIn("+ location.search + location.hash", redirect)
+                self.assertNotIn("versions/0.25", str(list(site.rglob("*"))))
                 self.assertTrue((site / ".nojekyll").is_file())
                 self.assertEqual(list((root / "api-docs/_build").iterdir()), [site])
                 self.assertEqual(verify.call_count, 2)
@@ -180,7 +205,7 @@ class VersionedDocsTests(unittest.TestCase):
                 build_html.side_effect = RuntimeError("Doxygen build failed")
                 with self.assertRaisesRegex(RuntimeError, "Doxygen build failed"):
                     docs.build_site()
-                self.assertEqual((site / "index.html").read_text(), "v0.26.14:")
+                self.assertEqual((site / "index.html").read_text(), "v0.27.0:")
                 self.assertEqual(list((root / "api-docs/_build").iterdir()), [site])
 
 

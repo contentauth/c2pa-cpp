@@ -184,10 +184,12 @@ ctest --test-dir build/debug --output-on-failure
 ### Building API documentation
 
 The [API documentation](https://contentauth.github.io/c2pa-cpp/) is built with
-Doxygen from selected published releases. Use the version selector to switch
-releases. The first tag in `api-docs/versions.json` is
-the default at the existing root URL; each release is also available at
-`https://contentauth.github.io/c2pa-cpp/versions/<tag>/`.
+Doxygen from selected published stable releases. The selector displays major/minor
+lines (`X.Y`); each page displays the exact `vX.Y.Z` patch that supplied its source.
+`api-docs/versions.json` retains one highest stable patch per selected line,
+sorted by numeric semver descending. The highest line is the default at the
+existing root URL; canonical line pages are under
+`https://contentauth.github.io/c2pa-cpp/versions/X.Y/`.
 
 #### Preview the versioned site
 
@@ -209,8 +211,8 @@ python3 scripts/generate_versioned_api_docs.py
 
 Open `api-docs/_build/versioned/index.html` to preview the default release,
 including the version selector.
-Version-specific pages are under `api-docs/_build/versioned/versions/<tag>/`.
-The build verifies that each configured tag has a published GitHub release and
+Line-specific pages are under `api-docs/_build/versioned/versions/X.Y/`.
+The build verifies that each configured tag has a published stable GitHub release and
 reads that tag's headers, C sources, and README without running release code.
 It uses the current branch's Doxygen configuration and styling.
 
@@ -228,28 +230,89 @@ tree and does not include a version selector or require GitHub authentication.
 
 #### Publishing
 
-Publishing a stable GitHub release automatically prepends its exact `vX.Y.Z`
-tag to `api-docs/versions.json` on `main`, preserving older entries and
-promoting an existing tag without duplicates. The bot commits this update
-after publication; it does not modify the release tag. The same workflow then
-builds and deploys the updated site, without relying on the bot's push
-triggering another workflow. Prerelease publications rebuild the configured
-versions without changing the version list. Rerunning a release workflow
-does not create an empty commit.
+`promote-docs.yml` reconciles published stable GitHub releases on release
+publication, manual dispatch, and hourly recovery. It verifies release metadata,
+updates retained lines only to higher patches, and adds newly released lines
+above the highest known active or retired line. It never backfills unselected
+historical lines or restores retired lines. Older maintenance releases cannot
+regress a patch or move the default. Drafts and prereleases are excluded.
 
-The version-update job requires `contents: write`, and branch protection or
-repository rules must allow `github-actions[bot]` to push to `main`. If that
-push fails, deployment is blocked rather than publishing a stale version list.
-The deployment job retains read-only repository access.
+The dependency-free Python updater writes **only `api-docs/versions.json` on
+`main`** through the GitHub contents API. Each commit is guarded by the current
+file SHA; conflicts trigger a fresh manifest read and full release reconciliation,
+up to six attempts, without force pushes. Repeated runs make no empty commits.
+Promotion runs have no Actions concurrency group: pending concurrency runs are
+not a durable release queue. Full paginated reconciliation and hourly recovery
+also catch missed events or exhausted retries. Failed runs remain visible and
+can be rerun manually.
 
-To adjust the selected releases manually, edit `api-docs/versions.json`,
-putting the desired default first. Pushes to `main` and manual workflow runs
-also rebuild and deploy the site without changing the version list.
+After a successful promotion workflow, `publish-docs.yml` explicitly rebuilds
+current `main` through `workflow_run`, even if promotion made no change; it does
+not rely on a bot push. Main pushes and manual publishing dispatches remain
+supported. A single workflow-wide Pages lock serializes build/deploy pairs.
+Every admitted run checks out current `main`, rather than the triggering SHA,
+so replacing a pending run does not discard release updates. Deployment skips
+an artifact if `main` advanced during its build; the pending current-main run
+rebuilds it. Builds have read-only contents access and no App credentials;
+only the deployment job has Pages and OIDC write permissions. No release
+workflow is triggered by manifest commits.
+
+##### GitHub App setup (administrator action)
+
+Use the shared organization documentation GitHub App with **Contents: read and
+write** (plus implicit metadata read). Its installation must include
+`contentauth/c2pa-cpp`. Expose the organization variable `C2PA_DOCS_APP_ID` and
+organization secret `C2PA_DOCS_APP_PRIVATE_KEY` to this repository through their
+repository-access policies. The workflow consumes them as
+`vars.C2PA_DOCS_APP_ID` and `secrets.C2PA_DOCS_APP_PRIVATE_KEY`; no repository-local
+copies are required. Configure the `main` ruleset or
+branch protection to allow this App's manifest commits, including any required
+pull-request bypass. Organization App provisioning alone does not establish
+installation access, credential visibility, or permission to bypass protections;
+administrators must verify these separately. The tooling does not change them.
+Keep the installation narrowly scoped to the intended documentation repositories:
+GitHub does not provide
+file-level Contents permissions, so the updater's fixed contents endpoint is
+the manifest-only write allowlist.
+
+Promotion mints a short-lived repository-scoped installation token requesting
+only Contents write, revokes it at job end, and never passes it to dependency
+installation, Doxygen, or deployment. Missing App configuration fails with an
+explicit error; there is no ordinary-token fallback. Leave Pages configured
+for GitHub Actions and authorize the `github-pages` deployment environment.
+Local tests/builds do not verify App installation, ruleset bypass, or live Pages
+deployment; confirm those separately after administrator setup.
+
+##### Manifest maintenance and pruning
+
+The manifest has exactly three fields:
+
+- `versions`: non-empty exact stable `vX.Y.Z` tags, one per active line, in
+  descending numeric semver order. Index zero is always the default.
+- `aliases`: historical exact tag/path identifiers mapped to an active unprefixed
+  `X.Y`. Include the selected exact tags too. Identifiers must be single safe URL
+  path segments (not reserved canonical `X.Y` names), and exact-tag aliases must
+  point to their own line.
+- `retiredLines`: unique unprefixed `X.Y` lines disjoint from active lines.
+
+The migration consolidates the previously listed patches without adding
+historical lines. It retains all their exact-tag URLs as redirect HTML to the
+current patch for that line. Redirects preserve equivalent HTML page paths,
+query strings and fragments; removed pages or symbols cannot be guaranteed.
+These redirects are compatibility links, not immutable historical snapshots.
+Automation preserves existing aliases and adds aliases for newly selected tags.
+
+To prune a line, open a **human-reviewed PR** removing its tag from `versions`
+and all aliases targeting that line, and adding the line to `retiredLines`.
+Keep at least one active line. Do not remove the retirement marker: automation
+must never resurrect it. To explicitly retain an otherwise unselected historical
+line, use a human PR adding its highest published stable patch and exact-tag
+alias. All builds and promotions validate the contract before proceeding.
 
 Run the documentation tooling tests with:
 
 ```sh
-python3 -m unittest discover -s tests -p 'test_versioned_docs.py'
+python3 -m unittest discover -s tests -p 'test_*docs*.py'
 node --test tests/test_version_selector.js
 ```
 

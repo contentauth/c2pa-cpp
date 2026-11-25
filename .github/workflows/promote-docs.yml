@@ -1,0 +1,49 @@
+name: Promote API documentation versions
+
+on:
+  release:
+    types: [published]
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Do not serialize promotions with Actions concurrency: pending runs can be lost.
+# Each run reconciles all releases and retries conflicting manifest writes.
+jobs:
+  promote:
+    if: github.event_name != 'release' || github.event.release.prerelease == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Require dedicated documentation App credentials
+        env:
+          APP_ID: ${{ vars.C2PA_DOCS_APP_ID }}
+          APP_KEY: ${{ secrets.C2PA_DOCS_APP_PRIVATE_KEY }}
+        run: |
+          if [[ -z "$APP_ID" || -z "$APP_KEY" ]]; then
+            echo "::error::Configure vars.C2PA_DOCS_APP_ID and secrets.C2PA_DOCS_APP_PRIVATE_KEY for the dedicated documentation GitHub App."
+            exit 1
+          fi
+
+      - name: Create repository-scoped manifest promotion token
+        id: app
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.C2PA_DOCS_APP_ID }}
+          private-key: ${{ secrets.C2PA_DOCS_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+
+      - name: Reconcile stable published releases into the manifest only
+        env:
+          DOCS_APP_TOKEN: ${{ steps.app.outputs.token }}
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
+        run: python3 scripts/promote_docs_versions.py

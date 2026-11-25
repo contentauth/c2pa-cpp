@@ -9,10 +9,11 @@ const source = fs.readFileSync(
 );
 
 for (const base of ["https://contentauth.github.io/c2pa-cpp/", "file:///tmp/site/"]) {
-  for (const prefix of ["", "versions/v0.26.14", "versions/v0.26.13"]) {
+  for (const prefix of ["", "versions/0.27", "versions/0.26"]) {
     test("selector links and navigation: " + base + prefix, function () {
-      const versions = ["v0.26.14", "v0.26.13"];
-      const tag = prefix ? prefix.split("/").pop() : versions[0];
+      const versions = ["v0.27.0", "v0.26.19"];
+      const lines = ["0.27", "0.26"];
+      const tag = prefix ? versions[lines.indexOf(prefix.split("/").pop())] : versions[0];
       function element() {
         return {
           children: [],
@@ -41,13 +42,13 @@ for (const base of ["https://contentauth.github.io/c2pa-cpp/", "file:///tmp/site
       const select = container.children[0].children[0];
       assert.equal(select.children.length, versions.length);
       for (const [index, option] of select.children.entries()) {
-        assert.equal(option.value, base + "versions/" + versions[index] + "/index.html");
+        assert.equal(option.value, base + "versions/" + lines[index] + "/index.html");
         assert.equal(option.selected, versions[index] === tag);
-        assert.equal(option.textContent, versions[index]);
+        assert.equal(option.textContent, lines[index]);
       }
       select.value = select.children[1].value;
       select.change();
-      assert.equal(navigated, base + "versions/v0.26.13/index.html");
+      assert.equal(navigated, base + "versions/0.26/index.html");
     });
   }
 }
