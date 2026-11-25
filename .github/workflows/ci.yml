@@ -37,7 +37,7 @@ jobs:
         run: sudo apt-get install doxygen
       - name: Test documentation tooling
         run: |
-          python3 -m unittest discover -s tests -p 'test_versioned_docs.py'
+          python3 -m unittest discover -s tests -p 'test_*docs*.py'
           node --test tests/test_version_selector.js
       - name: Build versioned documentation
         env:

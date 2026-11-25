@@ -5,29 +5,23 @@ import html
 import io
 import json
 from pathlib import Path, PurePosixPath
-import re
 import shutil
 import stat
 import subprocess
 import tempfile
 import zipfile
 
+try:
+    from .docs_versions import line, load, published_stable
+except ImportError:
+    from docs_versions import line, load, published_stable
+
 
 ROOT = Path(__file__).resolve().parents[1]
-TAG_PATTERN = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9][A-Za-z0-9.-]*)?")
 
 
 def load_versions(path: Path) -> list[str]:
-    config = json.loads(path.read_text(encoding="utf-8"))
-    versions = config.get("versions") if isinstance(config, dict) else None
-    if not isinstance(versions, list) or not versions:
-        raise ValueError("Documentation versions must be a non-empty list.")
-    for tag in versions:
-        if not isinstance(tag, str) or not TAG_PATTERN.fullmatch(tag):
-            raise ValueError("Documentation versions must be release tags such as v0.26.14.")
-    if len(set(versions)) != len(versions):
-        raise ValueError("Documentation versions must not contain duplicate tags.")
-    return versions
+    return load(path)["versions"]
 
 
 def verify_release(tag: str) -> None:
@@ -37,9 +31,8 @@ def verify_release(tag: str) -> None:
     )
     release = json.loads(result.stdout)
     if (
-        not isinstance(release, dict)
+        not published_stable(release)
         or release.get("tag_name") != tag
-        or release.get("draft") is not False
     ):
         raise ValueError(f"{tag} is not a published GitHub release.")
 
@@ -113,7 +106,8 @@ def build_html(stage: Path, output: Path, tag: str, versions: list[str], prefix:
 
 
 def build_site() -> Path:
-    versions = load_versions(ROOT / "api-docs/versions.json")
+    config = load(ROOT / "api-docs/versions.json")
+    versions = config["versions"]
     for tag in versions:
         verify_release(tag)
 
@@ -132,14 +126,29 @@ def build_site() -> Path:
             for asset in ("doxygen-extra.css", "version-selector.js"):
                 shutil.copy2(ROOT / "docs" / asset, stage / "docs")
             destination = stage / "output"
-            build_html(stage, destination, tag, versions, f"versions/{tag}")
-            shutil.copytree(destination / "html", site / "versions" / tag)
+            build_html(stage, destination, tag, versions, f"versions/{line(tag)}")
+            shutil.copytree(destination / "html", site / "versions" / line(tag))
 
         # Rebuild the default so selector links also work at the existing root URL.
         default = workspace / versions[0]
         destination = default / "default-output"
         build_html(default, destination, versions[0], versions, "")
         shutil.copytree(destination / "html", site, dirs_exist_ok=True)
+        for alias, target in config["aliases"].items():
+            canonical = site / "versions" / target
+            for page in canonical.rglob("*.html"):
+                relative = page.relative_to(canonical)
+                redirect = site / "versions" / alias / relative
+                redirect.parent.mkdir(parents=True, exist_ok=True)
+                destination = "../" * len(relative.parts) + target + "/" + relative.as_posix()
+                redirect.write_text(
+                    '<!doctype html><meta charset="utf-8"><title>Documentation moved</title>'
+                    f'<link rel="canonical" href="{html.escape(destination, quote=True)}">'
+                    '<script>location.replace(' + json.dumps(destination)
+                    + ' + location.search + location.hash);</script>'
+                    f'<a href="{html.escape(destination, quote=True)}">Continue to documentation</a>',
+                    encoding="utf-8",
+                )
         (site / ".nojekyll").touch()
         if output.exists():
             shutil.rmtree(output)
