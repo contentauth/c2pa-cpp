@@ -78,6 +78,14 @@ The Makefile has a number of other targets; for example:
 
 Results are saved in the `build` directory.
 
+### Downloading prebuilt binaries through a mirror
+
+By default the prebuilt `c2pa_c` libraries are downloaded from the [c2pa-rs GitHub releases](https://github.com/contentauth/c2pa-rs/releases). To use a mirror instead, set `C2PA_PREBUILT_BASE_URL` to the mirror's equivalent of `https://github.com/contentauth/c2pa-rs/releases/download`:
+
+```sh
+cmake -S . -B build -DC2PA_PREBUILT_BASE_URL=https://mirror.example.com/github/contentauth/c2pa-rs/releases/download
+```
+
 ### Building using local sources
 
 This project can also be built entirely from source (without pre-built library download), with the prerequisite that you will also need [c2pa-rs](https://github.com/contentauth/c2pa-rs) on the local machine, as well as the [Rust toolchain](https://rust-lang.org/tools/install/).
@@ -177,15 +185,11 @@ ctest --test-dir build/debug --output-on-failure
 
 The [API documentation](https://contentauth.github.io/c2pa-cpp/) is built with
 Doxygen from selected published releases. Use the version selector to switch
-releases. The first tag in [api-docs/versions.json](api-docs/versions.json) is
+releases. The first tag in `api-docs/versions.json` is
 the default at the existing root URL; each release is also available at
 `https://contentauth.github.io/c2pa-cpp/versions/<tag>/`.
 
-To generate API docs locally, these are the main files:
-
-- Configuration file: `c2pa-cpp/Doxyfile`
-- Script: `c2pa-cpp/scripts/generate_api_docs.sh`
-- Output directory: `api-docs/_build/html`
+#### Preview the versioned site
 
 Install Doxygen if needed:
 
@@ -194,16 +198,7 @@ macOS: brew install doxygen
 Ubuntu/Debian: sudo apt-get install doxygen
 ```
 
-To generate docs, enter the command:
-
-```sh
-./scripts/generate_api_docs.sh
-```
-
-Open `api-docs/_build/html/index.html` to see the working-tree documentation.
-This local build does not include a version selector.
-
-To build the versioned site, install Python 3.10 or newer and the
+Install Python 3.10 or newer and the
 [GitHub CLI](https://cli.github.com/), authenticate with `gh auth login` (or
 set `GH_TOKEN`), and ensure the selected release tags are available locally
 with `git fetch --tags`. Then run:
@@ -212,17 +207,44 @@ with `git fetch --tags`. Then run:
 python3 scripts/generate_versioned_api_docs.py
 ```
 
-Open `api-docs/_build/versioned/index.html` to see the default release.
+Open `api-docs/_build/versioned/index.html` to preview the default release,
+including the version selector.
 Version-specific pages are under `api-docs/_build/versioned/versions/<tag>/`.
 The build verifies that each configured tag has a published GitHub release and
 reads that tag's headers, C sources, and README without running release code.
 It uses the current branch's Doxygen configuration and styling.
 
-To publish documentation for another release, add its tag to
-[api-docs/versions.json](api-docs/versions.json), putting the desired default
-first. Publishing a release rebuilds the configured versions but does not
-automatically add it to this list. Pushes to `main` and manual workflow runs
-also rebuild and deploy the site.
+#### Preview unreleased changes
+
+The versioned site uses published release sources, not working-tree API changes.
+To preview local changes before release, run:
+
+```sh
+./scripts/generate_api_docs.sh
+```
+
+Open `api-docs/_build/html/index.html`. This Doxygen-only build uses the working
+tree and does not include a version selector or require GitHub authentication.
+
+#### Publishing
+
+Publishing a stable GitHub release automatically prepends its exact `vX.Y.Z`
+tag to `api-docs/versions.json` on `main`, preserving older entries and
+promoting an existing tag without duplicates. The bot commits this update
+after publication; it does not modify the release tag. The same workflow then
+builds and deploys the updated site, without relying on the bot's push
+triggering another workflow. Prerelease publications rebuild the configured
+versions without changing the version list. Rerunning a release workflow
+does not create an empty commit.
+
+The version-update job requires `contents: write`, and branch protection or
+repository rules must allow `github-actions[bot]` to push to `main`. If that
+push fails, deployment is blocked rather than publishing a stale version list.
+The deployment job retains read-only repository access.
+
+To adjust the selected releases manually, edit `api-docs/versions.json`,
+putting the desired default first. Pushes to `main` and manual workflow runs
+also rebuild and deploy the site without changing the version list.
 
 Run the documentation tooling tests with:
 

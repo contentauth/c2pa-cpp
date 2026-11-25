@@ -416,6 +416,16 @@ namespace c2pa
         }
     }
 
+    std::vector<unsigned char> Builder::format_embeddable(const std::string &format, std::vector<unsigned char> &data)
+    {
+        const std::string normalized_format = detail::normalize_format(format);
+        const unsigned char *c2pa_manifest_bytes = nullptr;
+        Context context;
+        Builder composer(context);
+        auto result = c2pa_builder_compose_manifest(composer.c2pa_builder(), normalized_format.c_str(), data.data(), data.size(), &c2pa_manifest_bytes);
+        return detail::to_byte_buffer(c2pa_manifest_bytes, result).to_vector();
+    }
+
     bool Builder::needs_placeholder(const std::string &format)
     {
         const std::string resolved_format = detail::resolve_format(format);

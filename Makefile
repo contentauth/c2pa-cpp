@@ -149,7 +149,7 @@ training: release
 # Downloads prebuilt wasm library from c2pa-rs releases.
 C2PA_VERSION := $(shell grep 'set.C2PA_VERSION' CMakeLists.txt | sed 's/[^"]*"//;s/".*//')
 EMSCRIPTEN_PREBUILT_URL = https://github.com/contentauth/c2pa-rs/releases/download/c2pa-v$(C2PA_VERSION)/c2pa-v$(C2PA_VERSION)-wasm32-unknown-emscripten.zip
-EMSCRIPTEN_PREBUILT_DIR = $(BUILD_DIR)/emscripten-prebuilt
+EMSCRIPTEN_PREBUILT_DIR = $(BUILD_DIR)/emscripten-prebuilt/$(C2PA_VERSION)
 EMSCRIPTEN_OUTPUT_DIR = $(BUILD_DIR)/emscripten-example
 
 emscripten-example:

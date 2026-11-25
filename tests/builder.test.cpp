@@ -883,9 +883,9 @@ TEST_F(BuilderTest, SignImageFileOnly)
     ASSERT_TRUE(std::filesystem::exists(output_path));
 };
 
-TEST_F(BuilderTest, SignImageFileNoThumbnailAutoGenContextInThread)
+TEST_F(BuilderTest, SignImageFileNoThumbnailAutoGenIsolatedSettings)
 {
-    // Exercise context-scoped settings on another thread.
+    // Exercise context settings in a worker thread.
     fs::path temp_output = get_temp_path("training_image_only_thread_local.jpg");
     std::thread test_thread([temp_output]() {
         fs::path current_dir = fs::path(__FILE__).parent_path();
@@ -901,7 +901,7 @@ TEST_F(BuilderTest, SignImageFileNoThumbnailAutoGenContextInThread)
         auto certs = c2pa_test::read_text_file(certs_path);
         auto p_key = c2pa_test::read_text_file(current_dir / "../tests/fixtures/es256_private.key");
 
-        auto context = c2pa::Context("{\"builder\": { \"thumbnail\": {\"enabled\": false}}}");
+        c2pa::Context context("{\"builder\": { \"thumbnail\": {\"enabled\": false}}}");
 
         // create a signer
         c2pa::Signer signer = c2pa::Signer("Es256", certs, p_key, "http://timestamp.digicert.com");
@@ -1750,7 +1750,7 @@ TEST_F(BuilderTest, SignStreamCloudUrl)
     };
 }
 
-TEST_F(BuilderTest, SignDataHashedEmbedded)
+TEST_F(BuilderTest, SignPrecomputedHashWithSettingsSigner)
 {
     auto settings = c2pa_test::create_test_settings_with_signer();
     auto context = c2pa::Context(settings);
@@ -1760,7 +1760,15 @@ TEST_F(BuilderTest, SignDataHashedEmbedded)
     EXPECT_FALSE(manifest_data.empty());
 }
 
-TEST_F(BuilderTest, SignDataHashedEmbeddedUsingContext)
+TEST_F(BuilderTest, EmbeddablePlaceholderRequiresContextSigner)
+{
+    auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+    c2pa::Context context;
+    c2pa::Builder builder(context, manifest);
+    EXPECT_THROW(builder.placeholder("image/jpeg"), c2pa::C2paException);
+}
+
+TEST_F(BuilderTest, SignPrecomputedHashWithContextSigner)
 {
     auto context = c2pa::Context::ContextBuilder()
         .with_signer(c2pa_test::create_test_signer())
@@ -1802,6 +1810,14 @@ TEST_F(BuilderTest, SignDataHashedEmbeddedWithAssetUsingContext)
     std::vector<unsigned char> manifest_data;
     ASSERT_NO_THROW(manifest_data = builder.sign_embeddable("image/jpeg"));
     EXPECT_EQ(manifest_data.size(), placeholder.size());
+}
+
+TEST_F(BuilderTest, EmbeddableSigningRequiresContextSigner)
+{
+    auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+    c2pa::Context context;
+    c2pa::Builder builder(context, manifest);
+    EXPECT_THROW(builder.sign_embeddable("image/jpeg"), c2pa::C2paException);
 }
 
 TEST_F(BuilderTest, SignWithInvalidStream)
@@ -2187,9 +2203,9 @@ TEST_F(BuilderTest, AddIngredientToBuilderUsingBasePath)
     ASSERT_NO_THROW(reader.json());
 }
 
-TEST_F(BuilderTest, AddIngredientToBuilderUsingBasePathPlacedActionContextInThread)
+TEST_F(BuilderTest, AddIngredientToBuilderUsingBasePathPlacedActionIsolatedSettings)
 {
-    // Exercise context-scoped settings on another thread.
+    // Exercise context settings in a worker thread.
     std::thread test_thread([this]() {
         fs::path current_dir = fs::path(__FILE__).parent_path();
 
@@ -2210,7 +2226,7 @@ TEST_F(BuilderTest, AddIngredientToBuilderUsingBasePathPlacedActionContextInThre
         }
         fs::create_directories(temp_dir);
 
-        auto context = c2pa::Context("{\"builder\": { \"actions\": {\"auto_placed_action\": {\"enabled\": false}}}}");
+        c2pa::Context context("{\"builder\": { \"actions\": {\"auto_placed_action\": {\"enabled\": false}}}}");
 
         // The instance_id we assign to the ingredient and reference from the placed action.
         std::string instance_id = "test:iid:939a4c48-0dff-44ec-8f95-61f52b11618f";
@@ -3413,8 +3429,8 @@ TEST_F(BuilderTest, ExtractIngredientsFromArchiveLegacy) {
       const std::string& base_manifest_json) -> c2pa::Builder {
 
       // Create a Reader from the archive
-      c2pa::Context context(R"({"verify": {"verify_after_reading": false}})");
-      c2pa::Reader reader(context, "application/c2pa", archive_stream);
+      c2pa::Context archive_context(R"({"verify": {"verify_after_reading": false}})");
+      c2pa::Reader reader(archive_context, "application/c2pa", archive_stream);
       auto json_result = reader.json();
 
       // Parse the archive JSON to extract ingredient information
@@ -3520,14 +3536,14 @@ TEST_F(BuilderTest, ExtractIngredientsFromArchiveToBuilderLegacy) {
       builder.to_archive(builder_archive);
       builder_archive.seekg(0);
 
-      c2pa::Context context(R"({"verify": {"verify_after_reading": false}})");
-      c2pa::Reader builder_reader(context, "application/c2pa", builder_archive);
+      c2pa::Context archive_context(R"({"verify": {"verify_after_reading": false}})");
+      c2pa::Reader builder_reader(archive_context, "application/c2pa", builder_archive);
       auto builder_parsed = json::parse(builder_reader.json());
       std::string builder_active = builder_parsed["active_manifest"];
       json current_ingredients = builder_parsed["manifests"][builder_active].value("ingredients", json::array());
 
       // Read the incoming archive to get its ingredients
-      c2pa::Reader archive_reader(context, "application/c2pa", archive_stream);
+      c2pa::Reader archive_reader(archive_context, "application/c2pa", archive_stream);
       auto archive_parsed = json::parse(archive_reader.json());
       std::string archive_active = archive_parsed["active_manifest"];
       auto new_ingredients = archive_parsed["manifests"][archive_active]["ingredients"];
@@ -3732,8 +3748,9 @@ TEST_F(BuilderTest, ExtractIngredientsFromArchivesLegacy) {
       };
 
       // Process each archive: extract ingredients, remap conflicting IDs
+      c2pa::Context archive_context(R"({"verify": {"verify_after_reading": false}})");
       for (auto& stream_ref : archive_streams) {
-          auto reader = std::make_unique<c2pa::Reader>(context, "application/c2pa", stream_ref.get());
+          auto reader = std::make_unique<c2pa::Reader>(archive_context, "application/c2pa", stream_ref.get());
           auto parsed = json::parse(reader->json());
           std::string active = parsed["active_manifest"];
           auto ingredients = parsed["manifests"][active]["ingredients"];

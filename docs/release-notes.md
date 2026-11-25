@@ -15,22 +15,51 @@
 - Documented direct stream-buffer forwarding and deferred native release of
   HTTP response bodies.
 
-### Breaking changes
+## 0.27.0 — breaking changes
 
-- Removed deprecated `Builder::data_hashed_placeholder`,
-  `Builder::sign_data_hashed_embeddable`, and `Builder::format_embeddable`
-  for compatibility with c2pa-rs 0.92.0. Use the context-signer workflow in
-  [Embeddable manifests](embeddable-api.md#removed-methods).
-- Removed deprecated `c2pa::load_settings`. Configure each `Context` using
-  `Settings` or `Context::ContextBuilder` instead; settings are no longer
-  thread-global.
-- Stream wrappers now hold opaque `C2paStream` handles rather than inheriting
-  from the C struct. Use their existing `c_stream` member when calling the C
-  API, and rebuild C++ consumers against the updated headers.
+11 November 2026
 
-Non-deprecated method names and signatures are unchanged. Development uses a
-local Rust source build; the default prebuilt-library version has not yet
-been updated.
+This release updates the native SDK to c2pa-rs **0.92.0** and requires a
+minor version bump because it removes deprecated C++ APIs and changes their
+behavior:
+
+- `c2pa::load_settings` has been removed. Pass configuration through a
+  `Context`; context-free `Reader` and `Builder` constructors now use default
+  settings rather than thread-local settings.
+- `Builder::data_hashed_placeholder` and `Builder::sign_data_hashed_embeddable`
+  have been removed. Configure a signer on the `Context` and use the
+  [embeddable signing workflow](embeddable-api.md#migrating-from-the-removed-data-hashed-apis).
+  The new workflow does not accept a precomputed DataHash JSON value.
+- The C++ stream wrappers now share the owning `c2pa::C2paStream` base, which
+  supports polymorphic destruction. The global C API type `::C2paStream` is
+  opaque and is no longer their base. Code using a global `::C2paStream*` as a
+  wrapper base must use `c2pa::C2paStream*` instead. Use the wrapper's `c_stream`
+  member when passing a stream to C; the underlying C++ stream must outlive the
+  wrapper. Qualify the type when both the C and C++ names are in scope.
+
+Applications using `C2PA_RS_PATH` or `C2PA_C_LIB_OVERRIDE` must update their
+own native library to a compatible 0.92.0 build.
+
+## 26 Oct 2026
+
+The selected native SDK release is c2pa-rs **0.91.7**, including its eMudhra
+TLS distrust updates. CMake downloads and the Emscripten example's `curl`
+download use the build host's TLS implementation and trust store, not the
+SDK's roots. Keep those tools and their CA stores updated separately (including
+`ca-certificates` in container builds).
+
+Applications that supply `ContextBuilder::with_http_resolver` are responsible
+for their resolver's TLS verification and trust-store updates. In particular,
+the Emscripten example delegates HTTP to `emscripten_fetch`, so its HTTPS trust
+is controlled by the browser or JavaScript host, not the Rust SDK. Updating the
+SDK alone does not update those stores. See the
+[eMudhra incident guidance](https://emudhra.we-have-a-problem.com/) for affected
+certificate chains and patched trust-store versions.
+
+Use the `c2pa-v0.91.7` tag for the matching native release. Local-source builds
+use the checkout supplied through `C2PA_RS_PATH`; they do not select or update
+that checkout automatically. Likewise, consumers using `C2PA_C_LIB_OVERRIDE`
+must update their replacement native library themselves.
 
 ## 3 Mar 2026
 
