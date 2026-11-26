@@ -109,7 +109,7 @@ FileStream *open_file_stream(const char *path, const char *mode)
 
 int close_file_stream(FileStream *stream)
 {
-    if (stream == NULL) {
+    if (stream == NULL || stream->stream == NULL) {
         return -1;
     }
     c2pa_release_stream(stream->stream);

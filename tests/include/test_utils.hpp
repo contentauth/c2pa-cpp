@@ -21,6 +21,7 @@
 #include <string>
 #include <stdexcept>
 #include <vector>
+#include <nlohmann/json.hpp>
 
 #include "c2pa.hpp"
 
@@ -76,6 +77,22 @@ inline c2pa::Settings create_test_settings_with_signer()
     auto settings_json = read_text_file(
         get_fixture_path("settings/test_settings_with_signer.json"));
     return c2pa::Settings(settings_json, "json");
+}
+
+inline std::string prehashed_training_manifest()
+{
+    auto manifest = nlohmann::json::parse(read_text_file(get_fixture_path("training.json")));
+    manifest["assertions"].push_back({
+        {"label", "c2pa.hash.data"},
+        {"data", {
+            {"exclusions", {{{"start", 20}, {"length", 100}}}},
+            {"name", "jumbf manifest"},
+            {"alg", "sha256"},
+            {"hash", "gWZNEOMHQNiULfA/tO5HD2awOwYMA3tnfUPApIr9csk="},
+            {"pad", " "}
+        }}
+    });
+    return manifest.dump();
 }
 
 } // namespace c2pa_test

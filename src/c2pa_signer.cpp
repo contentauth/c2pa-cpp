@@ -77,6 +77,20 @@ namespace c2pa
         }
     }
 
+    Signer::Signer(SignerIntoFunc callback, C2paSigningAlg alg,
+                   const std::string &sign_cert, const std::string &tsa_uri)
+        : callback_owner_(std::make_unique<SignerIntoFunc>(std::move(callback)))
+    {
+        if (!*callback_owner_) {
+            throw C2paException("Signer callback must not be empty");
+        }
+        signer = c2pa_signer_create(callback_owner_.get(), detail::signer_into_passthrough,
+                                    alg, sign_cert.c_str(), validate_tsa_uri(tsa_uri));
+        if (!signer) {
+            throw C2paException();
+        }
+    }
+
     Signer::Signer(const std::string &alg, const std::string &sign_cert, const std::string &private_key, const std::optional<std::string> &tsa_uri)
     {
         auto info = C2paSignerInfo { alg.c_str(), sign_cert.c_str(), private_key.c_str(), validate_tsa_uri(tsa_uri) };

@@ -40,7 +40,8 @@ namespace c2pa
 
     Context::Context(Context&& other) noexcept
         : context(std::exchange(other.context, nullptr)),
-          callback_owner_(std::move(other.callback_owner_)) {
+          callback_owner_(std::move(other.callback_owner_)),
+          signer_callback_owner_(std::move(other.signer_callback_owner_)) {
     }
 
     Context& Context::operator=(Context&& other) noexcept {
@@ -52,6 +53,7 @@ namespace c2pa
             }
             context = std::exchange(other.context, nullptr);
             callback_owner_ = std::move(other.callback_owner_);
+            signer_callback_owner_ = std::move(other.signer_callback_owner_);
         }
         return *this;
     }
@@ -66,6 +68,12 @@ namespace c2pa
     Context::Context(C2paContext* ctx,
                      std::unique_ptr<ProgressCallbackFunc> callback) noexcept
         : context(ctx), callback_owner_(std::move(callback)) {
+    }
+
+    Context::Context(C2paContext* ctx, std::unique_ptr<ProgressCallbackFunc> callback,
+                     std::unique_ptr<SignerIntoFunc> signer_callback) noexcept
+        : context(ctx), callback_owner_(std::move(callback)),
+          signer_callback_owner_(std::move(signer_callback)) {
     }
 
     void Context::cancel() noexcept {
@@ -102,6 +110,7 @@ namespace c2pa
 
     Context::ContextBuilder::ContextBuilder(ContextBuilder&& other) noexcept
         : pending_callback_(std::move(other.pending_callback_)),
+          pending_signer_callback_(std::move(other.pending_signer_callback_)),
           context_builder(std::exchange(other.context_builder, nullptr)) {
     }
 
@@ -115,6 +124,7 @@ namespace c2pa
             }
             context_builder = std::exchange(other.context_builder, nullptr);
             pending_callback_ = std::move(other.pending_callback_);
+            pending_signer_callback_ = std::move(other.pending_signer_callback_);
         }
         return *this;
     }
@@ -187,6 +197,7 @@ namespace c2pa
         if (c2pa_context_builder_set_signer(context_builder, raw) != 0) {
             throw C2paException();
         }
+        pending_signer_callback_ = std::move(signer.callback_owner_);
         return *this;
     }
 
@@ -267,6 +278,7 @@ namespace c2pa
         return ReleasedBuilder{
             std::exchange(context_builder, nullptr),
             std::move(pending_callback_),
+            std::move(pending_signer_callback_),
         };
     }
 
@@ -282,6 +294,6 @@ namespace c2pa
             throw C2paException("Failed to build context");
         }
 
-        return Context(ctx, std::move(pending_callback_));
+        return Context(ctx, std::move(pending_callback_), std::move(pending_signer_callback_));
     }
 } // namespace c2pa

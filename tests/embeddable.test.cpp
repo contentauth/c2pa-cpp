@@ -4,7 +4,6 @@
 // or the MIT license (http://opensource.org/licenses/MIT),
 // at your option.
 // Unless required by applicable law or agreed to in writing,
-// this software is distributed on an "AS IS" BASIS, WITHOUT
 // WARRANTIES OR REPRESENTATIONS OF ANY KIND, either express or
 // implied. See the LICENSE-MIT and LICENSE-APACHE files for the
 // specific language governing permissions and limitations under
@@ -53,7 +52,10 @@ protected:
 
     c2pa::Builder make_builder() {
         auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
-        return c2pa::Builder(manifest);
+        auto context = c2pa::Context::ContextBuilder()
+            .with_signer(c2pa_test::create_test_signer())
+            .create_context();
+        return c2pa::Builder(context, manifest);
     }
 
     std::vector<unsigned char> read_bytes(const fs::path& path) {
@@ -210,6 +212,39 @@ TEST_F(EmbeddableTest, FormatEmbeddableRoundTrip) {
         .with_signer(c2pa_test::create_test_signer())
         .create_context();
     jpeg_round_trip(context, "A.jpg", true);
+}
+
+TEST_F(EmbeddableTest, PreCalculatedHash) {
+    auto context = c2pa::Context::ContextBuilder()
+        .with_signer(c2pa_test::create_test_signer())
+        .create_context();
+    auto builder = c2pa::Builder(context, c2pa_test::prehashed_training_manifest());
+    // A precomputed hard binding uses direct mode, with no asset stream.
+    auto manifest = builder.sign_embeddable("image/jpeg");
+    EXPECT_FALSE(manifest.empty());
+}
+
+TEST_F(EmbeddableTest, AutoCalculatedHash) {
+    auto builder = make_builder();
+    auto placeholder = builder.placeholder("image/jpeg");
+    builder.set_data_hash_exclusions({{20, placeholder.size()}});
+    std::ifstream asset(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+    ASSERT_TRUE(asset.is_open());
+    builder.update_hash_from_stream("image/jpeg", asset);
+    auto manifest = builder.sign_embeddable("application/c2pa");
+    EXPECT_FALSE(manifest.empty());
+}
+
+TEST_F(EmbeddableTest, PrecomputedHashMultipleFormats) {
+    auto context = c2pa::Context::ContextBuilder()
+        .with_signer(c2pa_test::create_test_signer())
+        .create_context();
+    for (const auto& format : {"image/jpeg", "image/png"}) {
+        auto placeholder_builder = make_builder();
+        EXPECT_FALSE(placeholder_builder.placeholder(format).empty());
+        auto builder = c2pa::Builder(context, c2pa_test::prehashed_training_manifest());
+        EXPECT_FALSE(builder.sign_embeddable(format).empty());
+    }
 }
 
 TEST_F(EmbeddableTest, ContextSettingsPropagation) {
@@ -371,6 +406,26 @@ TEST_F(EmbeddableTest, BoxHashBmffAlwaysRequiresPlaceholder) {
     auto builder = c2pa::Builder(context, manifest_json);
 
     ASSERT_TRUE(builder.needs_placeholder("video/mp4"));
+}
+
+TEST_F(EmbeddableTest, DirectEmbeddingWithFormat) {
+    auto builder = make_builder();
+    auto placeholder = builder.placeholder("image/jpeg");
+    builder.set_data_hash_exclusions({{20, placeholder.size()}});
+    std::ifstream asset(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+    ASSERT_TRUE(asset.is_open());
+    builder.update_hash_from_stream("image/jpeg", asset);
+    auto manifest = builder.sign_embeddable("image/jpeg");
+    ASSERT_GT(manifest.size(), 2u);
+    EXPECT_EQ(manifest[0], 0xff);
+    EXPECT_EQ(manifest[1], 0xeb);
+    EXPECT_EQ(manifest.size(), placeholder.size());
+}
+
+TEST_F(EmbeddableTest, PlaceholderRequiresContextSigner) {
+    auto context = c2pa::Context();
+    auto builder = c2pa::Builder(context, "{}");
+    EXPECT_THROW(builder.placeholder("image/jpeg"), c2pa::C2paException);
 }
 
 class EmbeddableBlankFormatTest : public EmbeddableTest,

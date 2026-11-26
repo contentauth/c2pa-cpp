@@ -207,11 +207,29 @@ These methods perform the signing workflow: placeholder creation, hashing, and s
 | `Builder::update_hash_from_stream(format, stream)` | Reads the asset stream and computes the hard-binding hash. Automatically selects the appropriate path based on format: `BmffHash` for BMFF (skips manifest box), `BoxHash` for chunk-based formats (creates assertion if needed), or `DataHash` (skips exclusion ranges). Takes a `std::istream&`. |
 | `Builder::sign_embeddable(format)` | Signs the manifest and returns bytes ready to embed. For placeholder workflows, it pads the output to match the placeholder size for in-place patching. For BoxHash workflows, the output is the actual signed manifest size (not padded), suitable for appending as a new chunk. |
 
+### Removed methods
+
+The following deprecated methods have been removed to support c2pa-rs 0.92.0,
+which removes their underlying C FFI functions.
+
+| Removed method | Replacement |
+|-------------------|-------------|
+| `data_hashed_placeholder(reserved_size, format)` | `needs_placeholder(format)`, then `placeholder(format)`. The reserve size comes from the signer on the Context. |
+| `sign_data_hashed_embeddable(signer, data_hash, format, asset)` | `set_data_hash_exclusions(exclusions)`, `update_hash_from_stream(format, stream)`, then `sign_embeddable(format)`. The signer comes from the Context. |
+
+For the full replacement flow, see [Using the DataHash placeholder](#using-the-datahash-placeholder).
+
 ### Deprecated method
 
 `Builder::format_embeddable(format, data)` remains available for formatting raw
 manifest bytes. Prefer `sign_embeddable(format)`, which returns bytes already
 formatted for embedding.
+
+Attach the signer to the `Context` before constructing the `Builder`; the
+placeholder's reserve size and signing operation both use that signer.
+For a precomputed hash, include a `c2pa.hash.data` assertion in the manifest
+definition, then call `sign_embeddable(format)` directly without creating a
+placeholder or hashing an asset stream.
 
 ## Using the DataHash placeholder
 

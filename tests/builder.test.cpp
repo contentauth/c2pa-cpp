@@ -1750,12 +1750,66 @@ TEST_F(BuilderTest, SignStreamCloudUrl)
     };
 }
 
+TEST_F(BuilderTest, SignPrecomputedHashWithSettingsSigner)
+{
+    auto settings = c2pa_test::create_test_settings_with_signer();
+    auto context = c2pa::Context(settings);
+    auto builder = c2pa::Builder(context, c2pa_test::prehashed_training_manifest());
+    std::vector<unsigned char> manifest_data;
+    ASSERT_NO_THROW(manifest_data = builder.sign_embeddable("image/jpeg"));
+    EXPECT_FALSE(manifest_data.empty());
+}
+
 TEST_F(BuilderTest, EmbeddablePlaceholderRequiresContextSigner)
 {
     auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
     c2pa::Context context;
     c2pa::Builder builder(context, manifest);
     EXPECT_THROW(builder.placeholder("image/jpeg"), c2pa::C2paException);
+}
+
+TEST_F(BuilderTest, SignPrecomputedHashWithContextSigner)
+{
+    auto context = c2pa::Context::ContextBuilder()
+        .with_signer(c2pa_test::create_test_signer())
+        .create_context();
+    auto builder = c2pa::Builder(context, c2pa_test::prehashed_training_manifest());
+    std::vector<unsigned char> manifest_data;
+    ASSERT_NO_THROW(manifest_data = builder.sign_embeddable("image/jpeg"));
+    EXPECT_FALSE(manifest_data.empty());
+}
+
+TEST_F(BuilderTest, SignDataHashedEmbeddedWithAsset)
+{
+    auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+    auto settings = c2pa_test::create_test_settings_with_signer();
+    auto context = c2pa::Context(settings);
+    auto builder = c2pa::Builder(context, manifest);
+    auto placeholder = builder.placeholder("image/jpeg");
+    builder.set_data_hash_exclusions({{20, placeholder.size()}});
+    std::ifstream asset(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+    ASSERT_TRUE(asset.is_open());
+    builder.update_hash_from_stream("image/jpeg", asset);
+    std::vector<unsigned char> manifest_data;
+    ASSERT_NO_THROW(manifest_data = builder.sign_embeddable("image/jpeg"));
+    EXPECT_EQ(manifest_data.size(), placeholder.size());
+}
+
+TEST_F(BuilderTest, SignDataHashedEmbeddedWithAssetUsingContext)
+{
+    auto manifest = c2pa_test::read_text_file(c2pa_test::get_fixture_path("training.json"));
+    auto context = c2pa::Context::ContextBuilder()
+        .with_signer(c2pa_test::create_test_signer())
+        .create_context();
+    auto builder = c2pa::Builder(context, manifest);
+    auto placeholder = builder.placeholder("image/jpeg");
+    builder.set_data_hash_exclusions({{20, placeholder.size()}});
+    std::ifstream asset(c2pa_test::get_fixture_path("A.jpg"), std::ios::binary);
+    ASSERT_TRUE(asset.is_open());
+    builder.update_hash_from_stream("image/jpeg", asset);
+    std::vector<unsigned char> manifest_data;
+    ASSERT_NO_THROW(manifest_data = builder.sign_embeddable("image/jpeg"));
+    EXPECT_EQ(manifest_data.size(), placeholder.size());
 }
 
 TEST_F(BuilderTest, EmbeddableSigningRequiresContextSigner)
@@ -3653,6 +3707,7 @@ TEST_F(BuilderTest, ExtractIngredientsFromArchivesLegacy) {
       std::vector<std::reference_wrapper<std::istream>>& archive_streams,
       const std::string& base_manifest_json) -> c2pa::Builder {
 
+      c2pa::Context context(R"({"verify": {"verify_after_reading": false}})");
       // Collect ingredients and their associated readers from all archives.
       // Each entry pairs an ingredient JSON (possibly with remapped identifiers)
       // with a pointer to the Reader it came from, so we can copy resources later.
